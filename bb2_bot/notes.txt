@@ -1,0 +1,101 @@
+//  =============  Notes from the Platform Main Program  =============
+ *  20JUL15 - changed average to nearness
+ *  04JUL15 - extra IR LED hardware running
+ *            doesn't seem to make much difference
+ *  02AUG15 - reworked the button routine
+ *            moved debounce code to the joystick
+ *  03AUG15 - added "mode" LEDs to robot chassis
+ *  22AUG15 - began fooling with Rover5 interval encoders and interrupts
+ *            I had to put some "IF MEGA" conditions on some libraries
+ *            because they define pins that don't exist on the ProMini
+ *            Also, there's some problem with the way I combined <routines> and <shared>
+ *  28AUG15  - / -  HAPPY 11TH WEDDING ANNIVERSARY - / -
+ *            Both interrupts working correctly. Moved them to sketch library folder.
+ *            I may try to move all problem libraries to robot's sketch folder.
+ *  06SEP15 - Reversed the polarity of the rear motors.
+ *            Changed motor library to reflect change.
+ *  -+-+-+-+- DO NOT USE ANY PREVIOUS VERSIONS!  -+-+-+-+-
+ *  NOV2015 - added code to clear motor data structures in Setup
+ *  15NOV15 - began adding digital compass libraries
+ *  08DEC15 - renamed digital compass device libraries to bb_hmc5883
+ *            and added them to the budbot2 sketch libraries
+ *  17DEC15 - changed roboDat and joyDat to rDat1 and jDat
+ *  07JAN16 - moved bbEye under bbServo, changed servo 'direction'
+ *            to more of a servo 'deviation'
+ *  17JAN16 - modified rDat1 to carry flags as bits, like jDat does
+ *  30JAN16 - put main loop inside 50ms motor control loop
+ *            trying to create control hierarchy
+ *  23FEB16 - dropped the "_08" designation
+ *  27FEB16 - brought the main loop back outside (30JAN16) because
+ *            the platform exhibited strange behavior that suggested
+ *            it might have gotten stuck in the inner loop.
+ *            Well that didn't work.
+ *            Now I will try to get more telemetry back from the platform
+ *            by returning two robot data structures.  Multiplexing and
+ *            de-multiplexing will occur in the radio routines.
+ *  07APR16 - Moved main "control" into the T3 (50ms) loop
+ *  01MAY16 - After Mexico vacation and some minor fiddling, the platform
+ *            software compiled, and most things seem to work.
+ *  04MAY16 - changed the entire way that processing parses data strings.
+ *  10MAY16 - Now using a PID control for the servos, so had to move
+ *              servo.neckPos back into the loop for 50ms timing
+ *  28MAY16 - Measured the 50ms T3 Loop execution times at 4 to 6ms.
+ *  18JUN16 - Added the 9DoF IMU Motion Shield to the platform
+ *            Integrated the NAxisMotion library into the Compass library
+ *            Added an external imuDat structure to store the IMU data.
+ *            Will probably need a third rDat to retrieve data.
+ *  08JUL16 - Customized the NAxisMotion library to include Axis Remap
+ *  27JUL16 - Redesigned the platform button interface and two more buttons.
+ *            Converted button flags to flag bits.
+ *  06DEC16 - Added bumper micro switches tied to AVR reset line. But now I
+ *            have to manually reset the AVR when I want to upload new software.
+ *            I'm considering using an interrupt; the bigger problem is that
+ *            I don't know what causes it to lose control, lock up and run away.
+ 
+    // =====================   Compass Calibration Routine   =====================
+    // NOTE: #define COMPASS_DEEBUG must be set to (1) in 'defines.h'
+    // - Press Robot Button 1 to begin.
+    // - Green LED flashes for 10 seconds. If button is pressed, Green LED
+    //     stops flashing and lights solid while Scale data is collected.
+    // - Then, Yellow LED flashes for 10 seconds. If button is pressed, Yellow LED
+    //     stops flashing and lights solid while Scale data is stored in EEPROM.
+    // - Next, Red LED flashes for 10 seconds. If button is pressed, Red LED
+    //     stops flashing and lights solid for 60 seconds while robot platform is rotated
+    //     and Offset data is collected.
+    // - Then, Yellow LED flashes for 10 seconds. If button is pressed,  Yellow LED
+    //     stops flashing and lights solid while Offset data is stored in EEPROM.
+    // - Finally, Digital Compass re-initializes before terminating Calibration Routine.
+    if( fbCHK( fbRobBut1)) bbCompass.calibrate();
+    // - - - - - - - - - -   End Compass Calibration Routine   - - - - - - - - - -
+ 
+ 
+//  - - - - - - -  End of Notes from the Platform Main Program  - - - - - - -
+ 
+ 
+//  =============  Notes from the Joystick Main Program  =============
+//  - - - - - -  End of Notes from the Joystick Main Program  - - - - - -
+ 
+//  =============  Notes from the Compass Program  =============  
+/*  Local Magnetic Statistics from http://www.magnetic-declination.com/
+    --------------------------------------------------------------------
+      San Francisco, California
+      Latitude: 37° 46' 29.8" N
+      Longitude: 122° 25' 9.9" W
+      Magnetic declination: +13° 42'
+      Declination is POSITIVE (EAST)
+      Inclination: 61° 13'
+      Magnetic field strength: 48442.3 nT
+    --------------------------------------------------------------------
+
+    The original working scale and offset data:
+    --------------------------------------------------------------------
+    dcDat.scale.vX = 0.912;
+    dcDat.scale.vY = 0.881;
+    dcDat.scale.vZ = 0.955;
+
+    dcDat.offset.vX =   27.0;
+    dcDat.offset.vY = -119.0;
+    dcDat.offset.vZ = -255.0;
+    --------------------------------------------------------------------
+*/
+//  - - - - - - -  End of Notes from the Compass Program  - - - - - - -
