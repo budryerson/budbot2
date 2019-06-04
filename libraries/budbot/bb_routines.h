@@ -15,10 +15,11 @@ void microDelay( int ud);
 void milliDelay( int md);
 long floatToLong( float value);
 int  floatToInt( float value);
-void intConstrain( int &value, int high, int low);
+int  intConstrain( int value, int high, int low);
 void printFloat( float val, byte precision);
 int  intDiv( int n, int d);       //  Integer Division with Rounding
 long longDiv( long n, long d);   //  Long Integer Division with Rounding
+
 // Flagbit Manipulation Routines
 bool fbCHK( int index);
 void fbSET( int index);
@@ -33,6 +34,7 @@ void printAllData();
     uint16_t readADCInput( uint8_t adcIn);
     void setupADCregisters();
     void setupTimer3();
+    void setupTimer4();
     void printRobotData();
   #endif
 

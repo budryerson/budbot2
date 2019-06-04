@@ -14,7 +14,7 @@
 #ifndef __NAXISMOTION_H__
 #define __NAXISMOTION_H__
 
-extern "C"
+extern "C"       //   Allows use of a C header file with C++ code.
 {
   #include <bb_BNO055.h>
 }

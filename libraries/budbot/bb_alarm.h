@@ -16,24 +16,28 @@
 
 #include <Arduino.h>    //  It is very important to remember this!
 
-//class bb_alarm
-//{
-//   public:
-//        bb_alarm();
-//        ~bb_alarm();
-  void setupAlarm();  //  setup corner in and out pins
-  void showLED();
-  void toggleFlagBits();
-  bool testMotorCurrent();
-//        void toggleObjectDetect();
-//        void resetObjectDetect();  // rest Collision Detect flags
-  bool testObjectDetect();   // test each corner for Collision Detect
-//        void readAlarmSensors();
-//        void zeroDistance();
-//       void getMotorCurrent();
-  void resetRobotButtons();
-  void checkRobotButtons();
+class bb_alarm
+{
+  public:
+      bb_alarm();
+      ~bb_alarm();
 
-//};
+      void setup();  //  setup corner in and out pins
+      void showLED();
+      void toggleFlagBits();
+      bool testMotorCurrent();
+      bool testObjectDetect();   // test each corner for Collision Detect
+//       void toggleObjectDetect();
+//       void resetObjectDetect();  // rest Collision Detect flags
+//       void readAlarmSensors();
+//       void zeroDistance();
+//       void resetRobotButtons();
+      void checkPlatformButtons();
+      void printStatus();
+
+  private:
+      uint16_t sigState;       // signal state storage variable
+      bool testPlatformButton( uint8_t pButNmbr);
+};
 
 #endif

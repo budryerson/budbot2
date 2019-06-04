@@ -6,6 +6,8 @@
  *  04JUN16 - added isManual flag bit to rDat1
  *            Moved inCount from rDat1 to rDat2
  *  10FEB17 - removed all digital compass code
+ *  20MAR19 - added rDat3 to take vel and rot values and free
+ *            up space in rDat1 to pass Lidar flux values
  */
 
 #ifndef BB_SHARED_H     //  'include guard' macro to prevent errors
@@ -101,22 +103,29 @@
       float3_s GravAcc; // Gravity Acceleration data     12bytes
       float3_s Euler;   // Euler angle data              12bytes
       integer4_s Quat;      // Quaternion data            8bytes
+      
       uint8_t  AccCalStat;  // Accelerometer Calibration Status: 0 - 3
       uint8_t  GyroCalStat; // Gyroscope Calibration Status: 0 - 3
       uint8_t  MagCalStat;  // Magnetic Compass Calibration Status: 0 - 3
       uint8_t  SysCalStat;  // System Calibration Ststus: 0 - 3
+
+      int   drPosX;    // Dead reckoning position in millimeters
+      int   drPosY;
+      int   drSpdX;    // Dead reckoning speed in mm/sec
+      int   drSpdY;
   };
-  extern imuStruct imuDat;   //  84bytes total
+  extern imuStruct imuDat;   //  84 bytes total
 
   //  Servo Structure Declaration for Pan and Tilt Data
   struct srvStruct {
-      int sPos;     //  position angle how is this set
-      int sDir;     //  direction
-      int sPin;     //  pin number
-      int sMin;     //  maximum angle
-      int sMax;     //  minimum angle
-      int sOff;     //  mechanical center offset
-      uint16_t sVal[ 90];  // IR sensor values storage
+      int azDex;     //  azimuth position index value
+      int azDir;     //  azimuth sweep direction
+      int azStep;
+      int azPin;     //  azimuth servo pin number
+      int azMin;     //  azimuth minimum angle
+      int azMax;     //  aziumuth maximum angle
+      uint16_t distRay[ 181];  // array of Lidar distance values
+                               // for every azimuth index value
   };
   extern srvStruct srvDat;
 
@@ -128,9 +137,6 @@
       volatile unsigned long epv;       //  encoder pulse average
       volatile unsigned long epc;       //  count of all encoder pulses since program start
       volatile unsigned long eps;       //  saved pulse count since last T3 interrupt
-  //    volatile unsigned long ringTotal; //  total of encoder pulse array
-  //	  volatile unsigned long epa[8];    //  encoder pulse array
-  //	  volatile byte epx;                //  encoder pulse array index
       volatile bool epf;                //  encoder pulse flag
   };
   extern encStruct eDatR, eDatL;
@@ -150,100 +156,123 @@
   extern motStruct motDatR, motDatL;
 
 #endif  // - - - End of exclusive AVR_ATmega2560 declarations - - -
-      //  The reset are declared for both joystick and robot platforms
+        //  The rest are declared for both joystick and robot platforms
 
 // = = = =   There are Three Robot Data structures   = = = = =
-//  Robot Data structures carry robot data back to the
-//  Joystick Transmitter in two parts, rDat1 and rDat2.
+//  Robot Data structures carry 64 bytes of data to the Joystick
+//  in two parts: rDat1 and rDat2. Each a separate radio operation
 //  The platform employs a 32 bytes transmit (TX) buffer
 //  for multiplexing, and the joystick uses a 32 byte
 //  receive (RX) buffer to demultiplex the transmission.
 struct roboStruct1
 {
     uint8_t loTime;      // 1 copy of low order byte of bot clock
+                         // Another 'loTime' at head of R2 Identifies the two 32 byte
+                         // packets as parts of the same 64 byte packet transmission
     uint8_t blank1;      // 2 not used
-    uint8_t intCountR;   // 3 T3 period (50ms) wheel encoder interrupt counts
-    uint8_t intCountL;   // 4 Saved by bb_motor. 'bb_encoder.pulseAverage();'
+    uint8_t intCountR;   // 3 Actual motor speed in wheel encoder interrupts per T3
+    uint8_t intCountL;   // 4 (50ms) interval. Counted in 'encoder'. Saved in 'motor'.
 
     union {
-      uint32_t flagBits;  //  long integer
+      uint32_t flagBits;  // 5-8 long integer
       /* 0 = Motor is ON
          1 = Auto (autonomous navigation) is ON
          2 = Servo is ON
          3 = Radio is ON and linked
-         4 = Evade, trying to escape from trapped position
-         5 = Halt, no wheel encoder clicks during 40 auto control cycles (2 seconds)
-         6 = Pivot, spinning in place to a new heading
-         7 = Track, traveling on a set course
-         8 = Bear, whenever Heading differs from Course
-         9 = Program, running a sequence of steps
-        10 = Serial is ON and linked
+         4 = Serial is ON and linked
+         5 = Evade, trying to escape from trapped position
+         6 = Halt, no wheel encoder clicks during 40 auto control cycles (2 seconds)
+         7 = Pivot, spinning in place to a new heading
+         8 = Track, traveling on a set course
+         9 = Bear, whenever Heading differs from Course
+        10 = Program, running a sequence of steps
         11 = Fault
-        12 = Stall, when any motor current is over limit
+        12 = Seek, sweep servo one time to acquire target
         13 = Object Detection is ON
         14 = Reset Position
         15 = Manual, when joystick is moved out of dead zone
         16, 17, 18, 19 = Obstacle Detect sensors Left & Right Front, Left & Right Rear
-        = = =  Robot buttons are declared in Main Program 'bb2_bot.ino'  = = =
-        20 = Robot Button 1 - bbCompass.setupIMU() - test and reset IMU
-        21 = Robot Button 2 - fbSET( fbProgram) - do Program routine
-        22 = Robot Button 3 - fbSET( fbPosReset) - reset X & Y position values to 0
-        23 = Robot Button 4 - fbTOG( fbObject) - turn ON/OFF Object Detect flag
+        = = =  Robot button operation is in 'alarm.cpp'  = = =
+        20 = Robot Button 1 - fbTOG( fbServo);    // Toggle 'Sweep' routine in 'servo.cpp'
+        21 = Robot Button 2 - fbSET( fbProgram)   // Do 'Program' routine in 'control.cpp'
+        22 = Robot Button 3 - fbSET( fbPosReset)  // Reset IMU and zeroe position values as
+                                                  // part of 'getPosition' in 'compass.cpp'
+        23 = Robot Button 4 - fbTOG( fbObject)    // Enable 'testObjectDetect' in 'alarm.cpp'
+                                                  // called by 'control' in 'control.cpp'
       */
-      struct {
+      // Divide the flagBits into separate categories
+      struct {                 // 5-8
         uint16_t stateBits;    //  machine state flag bits
         uint8_t  senseBits;    //  object detect and robot button bits
         uint8_t  timerBits;    //  timers and joystick bits
       };
     };
 
-    int velocity;        //  9-10  These two values are read by the
-    int rotation;        // 11-12  motor control loop every 50ms.
-    int motorSpeedLeft;  // 13-14  Set in bb_motor::control
-    int motorSpeedRight; // 15-16      range: -255 to 255
-    int  head;          // 17-18 magnetic compass heading: 0 - 359°
-    int  course;        // 19-20 course set when auto enabled: 0 - 359°
-    int  bear;          // 21-22 difference between course and heading: -180 to +180°
+    int  azPos;         //  9-10 azimuth servo position 1: -90° to +90°
+    uint16_t dist;      // 11-12 Lidar reported distance in centimeters    
+    uint16_t flux;      // 13-14 Lidar reported intensity    
+    int  azPos2;        // 15-16 second azimuth servo position
+    uint16_t dist2;     // 17-18 second Lidar reported distance
+    uint16_t flux2;     // 19-20 second Lidar reported intensity
 
-    int  srvPos;        // 23-24 servo pan position: 0 - 180
-    int  nearPos;       // 25-26 direction to shortest range value
-    uint16_t avgVal;    // 27-28 average IR value from 10 samples
-    uint16_t range;     // 29-30 calculated range in centimeters
-
-    uint8_t  mpxID;     // 32 multiplex ID byte = 0x96, 150, 0b10010110
-    uint8_t  blank;     // 31
+    int motorSpeedLeft;  // 21-22  Commanded speed as calculated in bb_motor::control
+    int motorSpeedRight; // 23-24  by the PID controller. Range: -255 to 255
+    int  head;           // 25-26  magnetic compass heading: 0 - 359°
+    int  course;         // 27-28  course set when auto enabled: 0 - 359°
+    int  bear;           // 29-30  difference between course and heading: -180 to +180°
+    uint16_t  mpxID;     // 31-32  8 bit multiplex ID byte followed by zeros 
 };
 extern roboStruct1 rDat1;
 
 struct roboStruct2
 {
-    union {
+    union {                 //  Platform system time
       uint32_t botClock;    //  1-4 milliseconds since power on
       struct {
-        uint8_t loTime;       //  1 low order byte of bot clock
-        uint8_t hiTime[3];    //  2-4 remainder of unsigned long integer
+        uint8_t loTime;     //  1 low order byte of the clock
+        uint8_t hiTime[3];  //  2-4 the rest of the number
       };
     };
-    uint32_t botLoop;       //  5- 8 loops since power on
-                            //       (exceeds 64k in 54 minutes)
-    int      drPosX;        //  9-10 dead reckoning position X
+    uint32_t botLoop;       //  5- 8 loops since power on,
+                            //       will exceed 64k in 54 min.
+                            
+    //  From the 'compass.cpp' routines
+    int      drPosX;        //  9-10 dead reckoning position X in millimeters
     int      drPosY;        // 11-12 dead reckoning position Y
-    int      drSpdX;        // 13-14 dead reckoning speed X
-    int      drSpdY;        // 15-16 dead reckoning speed Y
+    int      drSpdX;        // 13-14 dead reckoning speed X in mm/sec
+    int      drSpdY;        // 15-16 dead reckoning speed Y in mm/sec
 
-    int      imAccX;        // 17-18 IMU X-axis linear acceleration
+    int      imAccX;        // 17-18 IMU X-axis linear acceleration in cm/s/s
     int      imAccY;        // 19-20 IMU Y-axis linear acceleration
-    int      imSpdX;        // 21-22 IMU speed X
+    int      imSpdX;        // 21-22 IMU speed X in meters/second
     int      imSpdY;        // 23-24 IMU speed Y
 
-    uint8_t  motCurRay[ 4]; // 25-28 Motor current array     4 bytes
+    union {                 // To send 4 motor currents as single word
+      uint8_t  mcRay[ 4];   // 25-28 Motor current as an array of unsigned bytes
+      uint32_t mcInt;       // 25-28 Same array as 32 bit unsigned integer
+    };
 
-    uint8_t  radioTime;     // 29 time in milliseconds to complete radio link
-    uint8_t  loopTime;      // 30 time in milliseconds to execute the loop
-    uint8_t  mpxID;         // 31 multiplex ID byte = 0x69, 105, 0b01101001
-    uint8_t  blank;         // 32
+    uint8_t  radioTime;     // 29 milliseconds to complete radio link
+    uint8_t  loopTime;      // 30 milliseconds to execute each loop
+    uint16_t  mpxID;        // 31-32 multiplex ID byte followed by zero byte
 };
 extern roboStruct2 rDat2;
+
+// System-wide data that does not get transmitted to the controller
+struct roboStruct3
+{
+    int velocity;       // 0-1  vel and rot values are received from jDat
+    int rotation;       // 2-3  and read by motor control every 50ms.
+    int nearDex;        // 4-5 lowest distance array index value
+    int farDex;         // 6-7 highest distance array index value
+    int tmpF;           // 8-9 Lidar temperature in degrees Farenheit
+    uint16_t distRay[ 181];  // array of Lidar distance values for each servo position
+    uint16_t fluxRay[ 181];  // array of Lidar strength values for each servo position
+	  //uint32_t gpTimer;     // general purpose timer
+    uint32_t seekTimer;   // 5 sec timer between SEEK intervals
+    uint32_t haltTimer;   // 5 sec timer between SEEK intervals
+};
+extern roboStruct3 rDat3;
 //
 // - - - - - -    End of Robot Data Declarations   - - - - - - - - //
 
@@ -252,13 +281,12 @@ extern roboStruct2 rDat2;
 //  and flag data forward to the Robot Receiver. Joystick routine
 //  also computes velocity and rotation values.
 //  -------------------------------------------------------------- //
-struct joyStruct    // Joystick data structure
-{
+struct joyStruct {   // Joystick data structure
     union {
-      uint32_t joyClock; // 1-4  joystick milliseconds since power on
+      uint32_t joyClock;   // 1-4  joystick milliseconds since power on
       struct {
         uint8_t loTime;    //  low order byte of joystick system time
-        uint8_t hiTime[3]; //  high order bytes of joystick system time
+        uint8_t hiTime[3]; //  remaining bytes of joystick system time
       };
     };
     uint32_t joyLoop;    // 5-8  number of joystick loops since power up
@@ -269,37 +297,28 @@ struct joyStruct    // Joystick data structure
     uint16_t jvY;        // 15-16 joystick Y: 0-1023 unsigned integer from analog pin A1
     int velocity;        // 17-18 joystick Velocity: integer -255 to 255
     int rotation;        // 19-20 joystick Rotation: integer -255 to 255, depending on velocity
-    
-    uint8_t blankRay[4]; // 21-24 - not used currently
 
-    bool radio;          // 25 signal to return rDat1
-    bool radio2;         // 26 radio link to platform is ON and good
-    bool serial;         // 27 serial link to PC is ON and good
-    bool sync;           // 28
+    uint16_t rIrqCount;   // 21-22 radio IRQ counter
+    uint16_t loopTime;    // 23-24
 
-    uint8_t strLen;      // 29 signal flags string length
-    uint8_t loopTime;    // 30
-    uint8_t mpxID;       // 31 multiplex ID byte = 0xCD; (1100 1101)
-    uint8_t blank;       // 32
+    bool radioIRQ;       // 25 radio IRQ has occurred
+    bool radio1;         // 26 rDat1 is received
+    bool radio2;         // 27 rDat2 is received
+    bool sync;           // 28 entire rDat packet is received
+
+    uint8_t  strLen;     // 29 signal flags string length
+    bool     serial;     // 30 serial link to PC is ON and good
+    uint16_t  mpxID;     // 31-32 multiplex ID byte followed by zero byte
 };
 extern joyStruct jDat;  // declare the joystick data variable
 //
 // - - - - - -   End of Joystick Data Declaration  - - - - - - - //
 
 struct radioBufferStruct {
-    uint8_t  loTime;     // 1 low order byte of system clock
-    uint8_t  blankRay[29];
-    uint8_t  mpxID;      // 31 structure ID byte
-    uint8_t  blank;      // 32 always blank
+    uint8_t  loTime;        //  1 low order byte of system clock
+    uint8_t  blankRay[29];  //  2-30 not assigned
+    uint16_t mpxID;         // 31-32 multiplex ID byte
 };
-extern radioBufferStruct rBuf1, rBuf2;
-
-// global flag variables
-extern bool centerDrift;    //  nudge servo toward straight and level
-
-//extern int evadeStep;       //  for 'control.cpp'
-//extern int programStep;
-//extern int saveCourse;    //  used by the evade maneuver in 'control.cpp'
-extern int scale;           //  something for the servo
+extern radioBufferStruct rBuff;
 
 #endif

@@ -16,19 +16,20 @@ class bb_control
     public:
         bb_control();
         ~bb_control();
+
         void setup();
         void control();
- //        bool isHalted();  // no motor movement for 5 seconds
+ //       bool isHalted();  // no motor movement for 5 seconds
  //       void joystick();
         void autoControl();
         void evade();
         void program();
         void controlReset();
  //      void getBear();
- //       void setRotation();
+ //      void setRotation();
      private:
         bool firstAuto; //  Set true before first pass through Auto
-                        //  Set false at first pass through Auto
+                        //  Set false with first pass through Auto
                         //  Set true again when Auto flag falls
         bool firstEvade;
         bool firstProgram;

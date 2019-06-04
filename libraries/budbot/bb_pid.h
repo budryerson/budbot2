@@ -17,11 +17,6 @@
 */
 class bb_pid
 {
-    private:
-        float kp, ki, kd;
-        bool inAuto;
-        void zeroPidVar();
-        void minMax( float &value);     // limit a float value
 
     public:
         bb_pid();
@@ -31,26 +26,34 @@ class bb_pid
         float inPut;
         float outPut_f;
         int  outPut;
-        float ITerm;
 
         void setupPID( float setP, float setI, float setD, 
-             float inPutMin, float inPutMax, float outPutMin, float outPutMax);
+                       float inPutMin, float inPutMax,
+                       float outPutMin, float outPutMax);
         void Compute();
         void setTunings( float Kp, float Ki, float Kd);
         void setSampleTime( int NewSampleTime);
-        void setControlMode( uint8_t Mode);
+        void setControlMode( bool mode);
         void setControlDirection( uint8_t Direction);
         void serialRX();   //  Receive from Processing GUI
         void serialTX();   //  Send data to Processing GUI
         
-        // declare working variables
-        float lastInPut = 0;
-        float SampleTime = 50;  // 50ms. time base is set by Timer3 ISR
 
         float pidOutMin, pidOutMax;
         float pidInMin, pidInMax;  // not implemented yet
         uint8_t  controlMode;
         uint8_t  controlDirection;
+
+    private:
+        bool  inAuto;
+        float kp, ki, kd;           // 'setTunings' working variables
+        float error, lastInPut;     // 'Compute' working variables
+        float PTerm, ITerm, DTerm;  //  more 'Compute' working variables
+        float SampleTime;           // 'setSampleTime' working variable
+
+        void  resetPidVar();             //
+        float minMax( float value);     // limit a float value
+
 };
 
 #endif

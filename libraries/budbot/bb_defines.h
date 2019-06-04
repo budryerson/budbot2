@@ -10,6 +10,11 @@
  *    10FEB17 - added blue LED to joystick and changed Calibrate flagBit to Serial
  */
 
+//  ALT 227 = π  (Pi)
+//  ALT 241 = ±  (plus/minus)
+//  ALT 167 = º  (degrees)
+//  ALT 248 = º  (degrees)
+
 //  If the expression you write (after the #if) has a nonzero value,
 //  then the line group immediately following the #if directive
 //  is retained in the translation unit.  (0) = False
@@ -17,102 +22,109 @@
 // ==========    Compile time conditional definitions    ==============
 
 // - - - - - - -  SWITCHES  - - - - - - - - -
-// Compile time conditional definitions, such as:
-//  For any PID calibration PID_CALIBRATE must be set to (1) to enable
-//  PID serial data and to suppress any extraneous serial printing
-#define PID_CALIBRATE (0) //  enable code of PID serial link to Processing display
-#define PID_MOTOR_RIGHT_CALIBRATE (0) //  enable the RX/TX code for each particular Controller
-#define PID_MOTOR_LEFT_CALIBRATE  (0) //  PID Calibrate Motor Left
-#define PID_ROTATION_CALIBRATE  (0)   //  be sure to turn off Velocity
-#define PID_VELOCITY_CALIBRATE  (0)   //  be sure to turn off Halt
-#define PID_PAN_CALIBRATE       (0)
-#define IMU_DEBUG (0)     //  enable print IMU Info
-#define RADIO_DEBUG (0)   //  enable print Radio Info
-#define EYE_CALIBRATE (0) //  enable IReye calibration
+  // Compile time conditional definitions, such as:
+  //  For any PID calibration PID_CALIBRATE must be set to (1) to enable
+  //  PID serial data and to suppress any extraneous serial printing
+  #define PID_CALIBRATE (0) //  enable code of PID serial link to Processing display
+  #define PID_MOTOR_RIGHT_CALIBRATE (0) //  enable the RX/TX code for each particular Controller
+  #define PID_MOTOR_LEFT_CALIBRATE  (0) //  PID Calibrate Motor Left
+  #define PID_ROTATION_CALIBRATE  (0)   //  be sure to turn off Velocity
+  #define PID_VELOCITY_CALIBRATE  (0)   //  be sure to turn off Halt
+  #define PID_PAN_CALIBRATE       (0)
+  #define PID_TILT_CALIBRATE      (0)
+  #define IMU_DEBUG (0)     //  enable print IMU Info
+  #define RADIO_DEBUG (0)   //  enable print Radio Info
+  //#define EYE_CALIBRATE (0) //  enable IReye calibration
 // - - - - - - -    End of SWITCHES  - - - - - - - - -
 
 
 // - - - - - - -  MACROS - - - - - - - - -
-// Some useful macros for bit manipulation
-#define SET( x, y) ( x = x | ( 1 << y))      // set y bit of x
-#define CLR( x, y) ( x = x & ( ~( 1 << y)))  // reset y bit of x
-#define CHK( x, y) ( x & ( 1 << y))          // test y bit of x
-#define TOG( x, y) ( x = x ^ ( 1 << y))      // flip y bit of x
-// Set bit Z of X if Y is HIGH, or clear bit Z if Y is LOW
-#define BUT( x, y, z) ( x ^= ( -y ^ x) & ( 1 << z))
+  // Some useful macros for bit manipulation
+  #define SET( x, y) ( x = x | ( 1 << y))      // set y bit of x
+  #define CLR( x, y) ( x = x & ( ~( 1 << y)))  // reset y bit of x
+  #define CHK( x, y) ( x & ( 1 << y))          // test y bit of x
+  #define TOG( x, y) ( x = x ^ ( 1 << y))      // flip y bit of x
+  // Set bit Z of X if Y is HIGH, or clear bit Z if Y is LOW
+  #define BUT( x, y, z) ( x ^= ( -y ^ x) & ( 1 << z))
 
-//#define DBLCHK( x, y) ( ( x >> y) & 1)  // test y bit of long x
-#define LOWORD(a) ((uint16_t)(a))  //  lo order word of 32 bit double word
-#define HIWORD(a) ((uint16_t)(((uint32_t)(a) >> 16) & 0xFFFF))
-#define LOBYTE(a) ((uint8_t)(a))   //  low order byte of 32 bit double word
+  //#define DBLCHK( x, y) ( ( x >> y) & 1)  // test y bit of long x
+  #define LOWORD(a) ((uint16_t)(a))  //  lo order word of 32 bit double word
+  #define HIWORD(a) ((uint16_t)(((uint32_t)(a) >> 16) & 0xFFFF))
+  #define LOBYTE(a) ((uint8_t)(a))   //  low order byte of 32 bit double word
 
-// returns the 32 bit long integer of a floating point number
-#define round(x) ( (x)>=0 ? (long)((x)+0.5):(long)((x)-0.5))
+  // returns the 32 bit long integer of a floating point number
+  #define round(x) ( (x)>=0 ? (long)((x)+0.5):(long)((x)-0.5))
 
-//  OFFSETOF if not a standard function in Arduino
-//  This macro returns a pointer to a member of a structure
-// #define OFFSETOF(type, field)    ((unsigned long) &(((type *) 0)->field))
+  //  OFFSETOF if not a standard function in Arduino
+  //  This macro returns a pointer to a member of a structure
+  // #define OFFSETOF(type, field)    ((unsigned long) &(((type *) 0)->field))
 // - - - - - - -  End of MACROS  - - - - - - - - -
 
 // - - - - - - -  CONSTANTS  - - - - - - - - -
-// 32 bit unsigned integer value of 1 used by FlagBit functions
-#define longOne 0x00000001UL
-//  Dashed line with carriage return/linefeed for printing.
-# define DASHLINE "------------------------------------\r\n"
+  // Reset rDat3.seekTimer to SEEK at 7 second intervals
+  // when SERVO is TRUE
+  #define SEEK_INTERVAL  7000UL
+  // Reset rDat3.haltTimer to HALT after 800 milliseconds
+  // of minimal motion commands when AUTO is TRUE
+  #define HALT_INTERVAL   800
+  // 32 bit unsigned integer value of 1 used by FlagBit functions
+  #define longOne 0x00000001UL
+  //  Dashed line with carriage return/linefeed for printing.
+  # define DASHLINE "------------------------------------\r\n"
 
 //  ==============    Data Structure Definitions   ==============
-//  data structure ID characters
-# define jDatID  0xCD  //  jDat.mpxID  = bit pattern: 1100 1101
-# define rDat1ID 0x96  //  rDat1.mpxID = bit pattern: 1001 0110
-# define rDat2ID 0x69  //  rDat2.mpxID = bit pattern: 0110 1001
+  //  data structure 16 bit mpxID byte followed by zero byte
+  # define JDAT_ID  0x00CD  //  jDat.mpxID  = bit pattern: 1100 1101
+  # define RDAT1_ID 0x0096  //  rDat1.mpxID = bit pattern: 1001 0110
+  # define RDAT2_ID 0x0069  //  rDat2.mpxID = bit pattern: 0110 1001
 
-//  position number of flagBits
-# define fbMotor   0
-# define fbAuto    1
-# define fbServo   2
-# define fbRadio   3
-# define fbEvade   4
-# define fbHalt    5
-# define fbPivot   6
-# define fbTrack   7
-# define fbBear    8
-# define fbProgram 9
-# define fbSerial 10
-# define fbFault  11
-# define fbStall  12
-# define fbObject 13
-# define fbPosReset 14
-# define fbManual 15
-# define odFlagLF 16
-# define odFlagRF 17
-# define odFlagLR 18
-# define odFlagRR 19
-# define fbRoBut1 20
-# define fbRoBut2 21
-# define fbRoBut3 22
-# define fbRoBut4 23
-# define fbRoTim1 24
-# define fbRoTim2 25
-# define fbJoBut1 26
-# define fbJoBut2 27
-# define fbJoBut3 28
-# define fbJoTim1 29
-# define fbJoTim2 30
-# define fbJoTim3 31
+  //  position number of flagBits
+  # define fbMotor    0
+  # define fbAuto     1
+  # define fbServo    2
+  # define fbRadio    3
+  # define fbSerial   4
+  # define fbEvade    5
+  # define fbHalt     6
+  # define fbPivot    7
+  # define fbTrack    8
+  # define fbBear     9
+  # define fbProgram  10
+  # define fbFault    11
+  # define fbSeek     12
+  # define fbObject   13
+  # define fbPosReset 14
+  # define fbManual 15
+  # define odFlagLF 16  // object detector flag Left Front
+  # define odFlagRF 17  // object detector flag Right Front
+  # define odFlagLR 18  // object detector flag Left Rear
+  # define odFlagRR 19  // object detector flag Right Rear
+  # define fbRoBut1 20
+  # define fbRoBut2 21
+  # define fbRoBut3 22
+  # define fbRoBut4 23
+  # define fbRoTim1 24  // three second halt timer?
+  # define fbRoTim2 25
+  # define fbJoBut1 26
+  # define fbJoBut2 27
+  # define fbJoBut3 28
+  # define fbJoTim1 29
+  # define fbJoTim2 30
+  # define fbJoTim3 31
 
 //  ==============    Compass Definitions   ==============
 //  Define some values of Pi for budbot
-#define bb_Pi    3.1415926536    //  Pi
-#define bb_2Pi   6.2831853072    //  2 x Pi
-#define bb_180ByPi 57.295779513  //  180 / Pi
+//#define bb_Pi    3.1415926536    //  Pi
+//#define bb_2Pi   6.2831853072    //  2 x Pi
+//#define bb_180ByPi 57.295779513  //  180 / Pi
 
 // Digital Compass Scale data stored at the bottom of EEPROM memory
-#define EEPROM_SCALE_ADDR    (0)
+//#define EEPROM_SCALE_ADDR    (0)
 // DC Offset data stored 12 byte (or 3 float) addresses higher
-#define EEPROM_OFFSET_ADDR   (EEPROM_SCALE_ADDR + sizeof( float3_s))
+//#define EEPROM_OFFSET_ADDR   (EEPROM_SCALE_ADDR + sizeof( float3_s))
 //  IR Eye Calibration data stored 12 addresses above that
-#define EEPROM_EYECAL_ADDR   (EEPROM_OFFSET_ADDR + sizeof( float3_s))
-#define EEPROM_NEXT_ADDR     (EEPROM_EYECAL_ADDR + 8; // size of an array of four, 2 byte integers
+//#define EEPROM_EYECAL_ADDR   (EEPROM_OFFSET_ADDR + sizeof( float3_s))
+//#define EEPROM_NEXT_ADDR     (EEPROM_EYECAL_ADDR + 8; // size of an array of four, 2 byte integers
 
 //  ==============    Radio Definitions    ==============
 #define rxRadioTimeout  200  // millisecond wait for radio available
@@ -137,41 +149,8 @@
 #define motorSpdMax  255
 #define motorSpdMin    0
 
-//  ==============    Servo Definitions    ==============
-//  number of times IR sensor is read to average for one reading
-#define IR_SAMPLE_SIZE 10
-
-//  we may have to redefine the servo coordinate system to range
-//  from 0 to 180 degrees with 90 being straight ahead
-#define servoInc     1    // servo move increment
-#define SERVO_MID    90    // zero degrees - level and straight ahead position
-
-#define SERVO_MIN   -90    //    0 degrees - full right/clockwise (from above) and down
-#define SERVO_MAX    90    //  180 degrees - full left/counterclockwise and up
-
-#define SWEEP_MIN   -60    //  sweep direction limits
-#define SWEEP_MAX    60    //  cannot be more than 70
-
-#define servoOff     0    //  offsets to match physical position
-
-#define tooNear     17    //  distance in centimeters
-#define tooFar     250
-#define theZone     50
-
-#define srvDexNum   10    //  Servo Index Number - for position averaging
-                          //  used by srvStrruct.sRay[ srvDexNum]
-
-// deadband values prevent the robot over reacting to small movements of the object
-#define dxDeadBand   100    // average rDat1.logDist change without robot body reacting
-#define pxDeadBand   300    // average pan change without robot body reacting
-
 
 //  ==============  PIN NUMBER DEFINITIONS  ============================
-  //  - - - - - - -  Robot SG90 Servo motor pins   - - - - - - -
-  #define irPin     A1    // IR Sensor - analog in A01 - - green wire
-  // not connected -> IR Sensor #2 - analog in A00 - - yellow wire <- not connected
-  #define servoPin   6    // PAN L/R PWM - OC4A Timer 4 Chan A - blue
-
   //  - - - - - - - -  Robot Motor pin Definitions  - - - - - - - - - -
   //  Motor Controller Board connectors are numbered 0, 1, 2, 3
   //  Do not use digital pins 6,7 & 8 for PWM because the OC4 timer is
@@ -228,7 +207,7 @@
 
   // - - - - -  Mega2560 hardware interrupt pin definitions  - - - - -
   #define INT0pin   2   // interrupt 0 = digital pin  2 - green wire to LFMotor
-  #define INT1pin   3   // interrupt 1 = digital pin  3 -  blue wire to RFMotor
+  #define INT1pin   3   // interrupt 1 = digital pin  3 - blue wire to RFMotor
   #define INT2pin  21   // interrupt 2 = digital pin 21
   #define INT3pin  20   // interrupt 3 = digital pin 20
   #define INT4pin  19   // interrupt 4 = digital pin 19
@@ -246,9 +225,10 @@
   //  - - - -  ProMini (Joystick) IO pin definitions  - - - -
   #define joyPin1 A0   // Joystick Pan  - analog in 0 - orange
   #define joyPin2 A1   // Joystick Tilt - analog in 1 - blue
-  #define jButPin1  3   // Button 1 pin - red
-  #define jButPin2  7   // Button 2 pin - violet
-  #define jButPin3  8   // Button 3 pin - green
+  #define jRadInt   2  // Joystick Radio Interrupt
+  #define jBut1Pin  3  // Joystick Button 1 pin - red
+  #define jBut2Pin  7  // Joystick Button 2 pin - violet
+  #define jBut3Pin  8  // Joystick Button 3 pin - green
 #endif
 
 /*  SPI pin numbers are unique to certain Arduino types.
@@ -266,6 +246,8 @@
     CE (Chip Enable) & CSN (Chip Select) pins must be defined
     in software specifically for the Mega and for the ProMini
  */
+ 
+// radio pins
 #ifdef __AVR_ATmega2560__
   #define CEpin  49  // gray
   #define CSNpin 53  // violet

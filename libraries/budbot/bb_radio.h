@@ -28,13 +28,14 @@ class bb_radio
     public:
         bb_radio();   //  library constructor
         ~bb_radio();  //  library destructor
+
         void setupJoystickRadio();
         void setupPlatformRadio();
         void joystickRadioAck();
         void platformRadioAck();
+
     private:
-        uint32_t raTimer2;
+        uint32_t rwTimer2;
 };
 
 #endif
-

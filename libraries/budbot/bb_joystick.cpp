@@ -32,20 +32,21 @@
   bb_joystick::bb_joystick(){}  //  "::" is the 'scope resolution operator'
   bb_joystick::~bb_joystick(){}
 
-  uint8_t butPinNumber[3] = { jButPin1, jButPin2, jButPin3};
+   // Joystick Button attachemnt pin numbers are defined in 'defines.h'
+  uint8_t butPinNumber[3] = { jBut1Pin, jBut2Pin, jBut3Pin};
   void bb_joystick::setup()
   {
       pinMode( joyPin1, INPUT);         //  set ProMini pin# A0 as joystick X-axis
       pinMode( joyPin2, INPUT);         //  set ProMIni pin# A1 as joystick Y-axis
 
-      pinMode( jButPin1, INPUT_PULLUP);  // set ProMini pin# 3 as Motor mode button
-      pinMode( jButPin2, INPUT_PULLUP);  // set ProMini pin# 7 as Auto mode button
-      pinMode( jButPin3, INPUT_PULLUP);  // set ProMini pin# 8 as Servo mode button
+      pinMode( jBut1Pin, INPUT_PULLUP);  // set ProMini pin# 3 as Motor mode button
+      pinMode( jBut2Pin, INPUT_PULLUP);  // set ProMini pin# 7 as Auto mode button
+      pinMode( jBut3Pin, INPUT_PULLUP);  // set ProMini pin# 8 as Servo mode button
 
-      pinMode( jGrnPin, OUTPUT);     // set ProMini pin# 4 as Green LED pin and Auto mode indicator
-      pinMode( jYlwPin, OUTPUT);     // set ProMini pin# 5 as Yellow LED pin and Servo mode indicator
-      pinMode( jRedPin, OUTPUT);     // set ProMini pin# 6 as Red LED pin and Motor mode indicator
-      pinMode( jBluPin, OUTPUT);     // set ProMini pin# 18 as Pane Communication indicator
+      pinMode( jGrnPin, OUTPUT);     // set ProMini pin# 4 - Green LED - Auto mode
+      pinMode( jYlwPin, OUTPUT);     // set ProMini pin# 5 - Yellow LED - Servo mode
+      pinMode( jRedPin, OUTPUT);     // set ProMini pin# 6 - Red LED - Motor mode
+      pinMode( jBluPin, OUTPUT);     // set ProMini pin# 18 - Blue LED - Com mode
   }
 
   // Light an LED to match rDat1 flagBit state
@@ -54,39 +55,10 @@
       digitalWrite( jRedPin, fbCHK( fbMotor));  //  fbMotor = 1, Motors are in run mode
       digitalWrite( jGrnPin, fbCHK( fbAuto));   //  fbAuto = 1, robot platform is Autonomous
       digitalWrite( jYlwPin, fbCHK( fbServo));  //  fbServo = 1, Servo seek is active
-      digitalWrite( jBluPin, !digitalRead(jBluPin));   //  Toggle blue LED
+      //digitalWrite( jBluPin, !digitalRead(jBluPin));   //  Toggle blue LED
   }
 
-  //  = = = = = = = =   read Joystick data routine   = = = = = = =
-
-  //  - - - - - - - - -  Check three joystick buttons  - - - - - - -
-  //  Check three joystick button and seat a separate timer for each.
-  //  If Button is pressed and held for joyButDelay amount of time
-  //  then set the corresponding signal bit TRUE.
-  //  Platform uses a signal bit to toggle the corresponding mode state.
-  //  *** This is the second most brilliant code in the program. ***
-  void bb_joystick::checkJoyButtons()
-  {
-      static uint32_t jButTimer[ 3];     // separate timer for each button
-      static uint32_t jButDelay = 10;    // 10 millisecond settle time for contacts
-      jDat.sigBits = 0;                  // reset 'jDat.sigBits' to zero
-      for ( int x = 0; x < 3; ++x)
-      {
-          if( ( !digitalRead( butPinNumber[ x]))    // If button pressed (LOW)
-            &&( jButTimer[ x] < millis()))          // and its timer has expired,
-          {
-              SET( jDat.sigBits, x);                // then set the signal flag bit
-          }
-          else                                      // otherwise
-          {
-              CLR( jDat.sigBits, x);                // clear the signal flag bit
-              jButTimer[ x] = jButDelay + millis(); // and reset its timer
-          }
-      }
-  }
-  //  - - - - - - - -  End of Check three joystick buttons  - - - - - - -
-
-  //  - - - - - - - - -  Read analog joystick data  - - - - - - -
+  //  = = = =  Read Joystick Data routine and check buttons  = = = =
   void bb_joystick::readData()
   {
       //  Get joystick analog values
@@ -98,24 +70,50 @@
       delay( 1);                        //  settle A/D converter
 
       //  - - -  convert joystick data to robot platform velocity and rotation values  - - - -
-      //  'jZmin' and 'jZmax' refer to "(Dead) Zone" values as defined in 'defines.h'.
-      if ( jDat.jvY >= jZmin && jDat.jvY <= jZmax) jDat.velocity = 0;   // joystick Y motion gets primary
-          else jDat.velocity = map( jDat.jvY, 1, 1018, -255, 255);      // transport velocity value
-      if ( jDat.jvX >= jZmin && jDat.jvX <= jZmax) jDat.rotation = 0;   // joystick X motion gets secondary
-          else jDat.rotation = map( jDat.jvX, 0, 1022, -255, 255);      // transport rotational modifier
+      //  'jZmin' and 'jZmax' refer to "(Dead) Zone" values given in 'defines.h'.
+      // joystick Y motion translate to primary transport velocity
+      if ( jDat.jvY >= jZmin && jDat.jvY <= jZmax) jDat.velocity = 0;
+          else jDat.velocity = map( jDat.jvY, 1, 1018, -255, 255);
+      // joystick X motion translates to rotational velocity modifier
+      if ( jDat.jvX >= jZmin && jDat.jvX <= jZmax) jDat.rotation = 0;
+          else jDat.rotation = map( jDat.jvX, 0, 1022, -255, 255);
 
-      //  If velocity is non-zero, then limit 'rotation' value to no more
+      //  If velocity is non-zero, then limit 'rotation' value to not more
       //  than the difference between 'velocity' and maximum velocity (255).
-      if( rDat1.velocity != 0)
+      if( jDat.velocity != 0)
       {
           static int spdDiff;
           spdDiff = 255 - abs( jDat.velocity);  // find limit of rotation on velocity
-          intConstrain( jDat.rotation, ( spdDiff * -1), spdDiff);
+          jDat.rotation = intConstrain( jDat.rotation, ( spdDiff * -1), spdDiff);
       }
 
-      //checkJoyButtons();
-      //  Check for Joystick motion and set MANUAL flag bit
-      BUT( jDat.sigBits, ( jDat.velocity || jDat.rotation != 0), fbManual);
+      //  - - - - - - - - -  Check three joystick buttons  - - - - - - -
+      //  Check three joystick button and start a separate timer for each.
+      //  If pressed and held for 10 msec, then SET the corresponding signal bit.
+      //  Button is then locked-out for 1 second to prevent repeated toggles.
+      //
+      //  The Platform uses signal bits to toggle corresponding mode states.
+      //  Signal bits are cleared in 'routines.cpp' during initialization
+      //  and again before 'getPaneData' after both rDat packets are synced
+      //
+      //  *** This is the second most brilliant code in the program. ***
+      static uint32_t jButTimer[ 3];     // separate timer for each button
+
+      for ( int x = 0; x < 3; ++x)  // check each of the three joystick buttons
+      {
+          if( !digitalRead( butPinNumber[ x]))      // If a button pressed (LOW)...
+          {
+              if( jButTimer[ x] < millis())         // and its timer has expired...
+              {
+                  SET( jDat.sigBits, x);            // then set the signal bit and
+                  jButTimer[ x] = millis() + 1000;  // and set 1 sec lock-out timer.
+              }
+          }
+          else                                      // If button NOT pressed...
+          {
+              jButTimer[ x] = millis() + 10;        // set 10 msec de-bounce timer.
+          }
+      }
   }
   //  - - - - - -    End of Read Joystick Data Routine    - - - - - - -
 
@@ -124,88 +122,111 @@
   //  the robot platform for the Processing display routine
   void bb_joystick::putPaneData()
   {
-      //   Serial.flush();        // flush the serial buffer
+//      while(Serial.available()) // flush the serial RX buffer
+//      {
+//          Serial.read();
+//      }
+      Serial.flush();           // flush the serial TX buffer
 
-      // jDat values
-      printf( "|JX%4i|JY%4i", jDat.jvX, jDat.jvY);      //  joystick values: 0 - 1023
-      printf( "|PV% 04i|PR% 04i", jDat.velocity, jDat.rotation);  //  motion values: -255 to 255
+      // - - - -  jDat values  - - - -
+      printf( "|JX%4i|JY%4i|PV% 04i|PR% 04i",
+          jDat.jvX,
+          jDat.jvY,        //  joystick values: 0 - 1023
+          jDat.velocity,
+          jDat.rotation);  //  motion values: -255 to +255
 
-      // rDat values
-      printf( "|PH%03u", rDat1.head);      //  magnetic direction of platform: 0 to 359°
-      printf( "|PC%03u", rDat1.course);    //  set course when fbAuto initiated: 0 to 359°
-      printf( "|PB% 04i", rDat1.bear);     //  difference between head and course: -180 to 180°
+      // - - - -  rDat values  - - - -
+      printf( "|PH%03u|PC%03u|PB% 04i",
+          rDat1.head,      //  magnetic direction of platform: 000° to 359°
+          rDat1.course,    //  set course when fbAuto initiated: 000° to 359°
+          rDat1.bear );    //  difference between head and course: -180° to 180°
 
-      printf( "|ML% 04i|MR% 04i", rDat1.motorSpeedLeft, rDat1.motorSpeedRight);  // L and R motor speed: -255 to 255
-      printf( "|EL%03u|ER%03u", rDat1.intCountL, rDat1.intCountR);  //  L&R wheel encoder Interrupt Counters.
+      printf( "|ML% 04i|MR% 04i|EL%03u|ER%03u",
+          rDat1.motorSpeedLeft,   //  Signed integer of Left and Right
+          rDat1.motorSpeedRight,  //  motor speed: -255 to +255
+          rDat1.intCountL,        //  Unsigned byte of Left and Right wheel
+          rDat1.intCountR );      //  encoder Interrupt Counters per T3 loop
 
-      printf( "|SP% 04i", rDat1.srvPos);   // Pan Servo Positions: 0 - 180
-      printf( "|IV%03u",  rDat1.avgVal);   // A single raw IR sensor output value
-      printf( "|ID%03u",  rDat1.range);    // Average IR value converted to centimeters
-      printf( "|NP% 04i", rDat1.nearPos);  // Average IR value converted to centimeters
+      printf( "|X1%03i|LD%03u|LF%05u|X2%03i",
+          rDat1.azPos,      // First Azimuth index value
+          rDat1.dist,       // Lidar distance value in centimeters
+          rDat1.flux,       // Lidar signal return intensity
+          rDat1.azPos2 );   // Second Azimuth index value
 
-      printf( "|FB");                      // Flag Bits as a 32bit 'long'
-      for( int x = 0; x < 32; ++x)
-      {
-          if( ( rDat1.flagBits >> x) & 1) printf( "1"); else printf( "0");
-      }
+      // Flag Bits as an 8 char hexadecimal number
+      // (converted to boolean string in Processing).
+      printf( "|FB%08lX", rDat1.flagBits);
 
-      // rDat2 values
-      printf( "|LF%03u", rDat2.motCurRay[ 0]);  // Motor Current Left Front
-      printf( "|RF%03u", rDat2.motCurRay[ 1]);  // Motor Current Right Front
-      printf( "|LR%03u", rDat2.motCurRay[ 2]);  // Motor Current Left Rear
-      printf( "|RR%03u", rDat2.motCurRay[ 3]);  // Motor Current Right Rear
+      // - - - -  rDat2 values  - - - -
 
-      printf( "|PX% 7i", rDat2.drPosX);      // dead reckoning position X
-      printf( "|PY% 7i", rDat2.drPosY);      // dead reckoning position Y
+      // Motor Current array as 8 char hexadecimal integer
+      printf( "|MC%08lX", rDat2.mcInt);
+
+      // Dead reckoning position
+      printf( "|PX% 7i|PY% 7i",
+          rDat2.drPosX,      // dead reckoning position X
+          rDat2.drPosY);     // dead reckoning position Y
+
       //  IMU values
-      printf( "|AX% 7i", rDat2.imAccX);      // IMU X-axis linear acceleration in mm/sec/sec
-      printf( "|AY% 7i", rDat2.imAccY);      // IMU Y-axis linear acceleration
-      printf( "|SX% 7i", rDat2.imSpdX);      // IMU X-axis speed in mm/sec
-      printf( "|SY% 7i", rDat2.imSpdY);      // IMU Y-axis speed in mm/sec
+      printf( "|AX% 7i|AY% 7i|SX% 7i|SY% 7i",
+          rDat2.imAccX,      // IMU X-axis linear acceleration in mm/sec/sec
+          rDat2.imAccY,      // IMU Y-axis linear acceleration
+          rDat2.imSpdX,      // IMU X-axis speed in mm/sec
+          rDat2.imSpdY);     // IMU Y-axis speed in mm/sec
 
-      printf( "|PT%10lu", rDat2.botClock);   //   Platform Clock in milliseconds
-      printf( "|LC%10lu", rDat2.botLoop);    // joystick Loop Counter
-      printf( "|LT% 4u",  rDat2.loopTime);      // joystick signal string length
+      printf( "|PT%8lX|LC%8lX|LT% 4u",
+          rDat2.botClock,    //  Platform Clock in milliseconds - 8 place hex number
+          rDat2.botLoop,     //  Platform Loop Counter - 8 place hex number
+          rDat2.loopTime);   //  Platform Loop Time -  4 place unsigned integer
+
   //    printf( "|ID% 4u",  rDat2.mpxID);      // joystick signal string length
   //    printf( "|LC%10lu", rDat2.botLoop);   // platform Loop Counter
   //    printf( "|LT %4u", rDat2.loopTime);    // platform Loop execution time
 
+      // Serial.write( ( uint8_t*) &rDat1, sizeof( rDat1));   // waiting for the day
       printf("\r\n");                        //  end of line
-  //    getPaneData();
+      // Total of 214 (was 225, 253) characters in a line,
+      // (not counting the CR/LF characters at the end).
+  //  getPaneData();
   }
   //  - - - -  End of getPaneData (read signal string) routine  - - - -
 
   //  = = = = = = = =    getPaneData (read) routine    = = = = = = = =
   //  Try 15 times to read data from PC and wait 250us
   //  after each try.  Same retry setting as Radio
-  String gpdBuffer = "";  // holder for the input string to be chopped up
-  const int gpdCountMax = 15; // max read retries
+  //  The only bits that might get set in Processing are:
+  //  fbMotor | fbAuto | fbServo | fbProgram | fbObject | fbPosReset
+  static String strBuffer;  // buffer for PC signal string
+  //static String gpdBuffer = "";  // holder for the input string to be chopped up
+  static byte gpdCount;
+  static const byte gpdCountMax = 15; // max read retries
   void bb_joystick::getPaneData()
   {
-      int gpdCount = 0;      // zero counter for data read retries
+      gpdCount = 0;      // zero data read retry counter
+      strBuffer = "";    // clear buffer for signal characters from PC
       fbCLR( fbSerial);      // CLR rDat serial
       jDat.serial = false;   // CLR jDat serial
-      String strBuffer = "";  // buffer for PC signal string
+
       while( gpdCount < gpdCountMax)
       {
           if( Serial.available() > 0)
           {
               // Examine the serial port looking for an EOL character
               strBuffer = Serial.readStringUntil('\n');
-              // Do not continue unless an EOL character has been received
+              // If an EOL character has been received...
               if ( strBuffer != "")
               {
-                  // test first characters and length
+                  // test for valid first character and proper length.
                   if( strBuffer.startsWith( "|") && strBuffer.length() == 17)
                   {
                       jDat.strLen = (uint8_t)strBuffer.length();  // length of signal string
                       for( int x = 0; x < 16; ++x)
                       {
-                        // 'jDat.sigBits' set to zero each loop by 'checkJoyButtons()'
+                        // 'sigBits' reset to 0 on each loop by 'readData()' above
                         if( strBuffer[ x + 1] == '1') SET( jDat.sigBits, x);
                       }
                       fbSET( fbSerial);
-                      jDat.serial = true;   // CLR jDat serial
+                      jDat.serial = true;     // CLR jDat serial
                       gpdCount = gpdCountMax; // and kill the loop
                   }
               }
@@ -213,7 +234,7 @@
           ++gpdCount;        // advance the count
           microDelay( 250);  // and wait 250 microseconds to try again
       }
-      Serial.flush();        // regardless of result, flush the serial buffer
+      //Serial.flush();        // regardless of result, flush the serial buffer
   }
   //  - - - -  End of getPaneData (read) routine    - - - -
 
@@ -234,6 +255,7 @@
       printf( "Auto= %1u ",  fbCHK( fbAuto));
       printf( "Servo= %1u ", fbCHK( fbServo));
       printf( "Joy Loop Count= %5u ", jDat.joyLoop);
+      printf( "Radio IRQ Count= %5u ", jDat.rIrqCount);
   //    printf(" | Robot Data Size= %1u ", rDat1.rDat1Size);
       printf( "\r\n");
   }

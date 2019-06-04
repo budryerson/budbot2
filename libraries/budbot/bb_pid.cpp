@@ -12,69 +12,85 @@
 #include <bb_routines.h>
 #include <bb_pid.h>
 
-#define MANUAL 0       //  Manual Mode = OFF
-#define AUTOMATIC 1    //  Auto Mode = ON
+#define MANUAL    0    //  Manual Mode = FALSE
+#define AUTOMATIC 1    //  Auto Mode  =  TRUE
 
-#define DIRECT 0       //  Proportion Direction = Direct
-#define REVERSE 1      //  Proportion Direction = Inverse
+#define DIRECT    0    //  Proportion Direction = Direct
+#define REVERSE   1    //  Proportion Direction = Inverse
 
 bb_pid::bb_pid(){}
 bb_pid::~bb_pid(){}
 
 //  reset the main PID variables
-void bb_pid::zeroPidVar()
+void bb_pid::resetPidVar()
 { 
     ITerm = outPut_f;
     lastInPut = inPut;
-    minMax( ITerm);
+    ITerm = minMax( ITerm);
+    inAuto = false;
 }
 
 void bb_pid::setupPID( float setP, float setI, float setD,
      float inPutMin, float inPutMax, float outPutMin, float outPutMax)
 {
-    setPoint = 0;     //  setPoint is assigned in motor.cpp
-    zeroPidVar();     //  set 4 main PID variables to 0
-    SampleTime = 50;  // 50ms. time base is set by Timer3 ISR
-    setTunings( setP, setI, setD);  //  Set tunings as determined by experiment
-    setControlMode( AUTOMATIC);
-    setControlDirection( DIRECT);
+    // public floats
+    SampleTime = 50;  // 50ms. time base is set by Timer3 ISR  
+    setPoint = 0;     //  setPoint is public and assigned in motor.cpp
+    inPut = 0;
     pidInMin = inPutMin;
     pidInMax = inPutMax;
     pidOutMin = outPutMin;
     pidOutMax = outPutMax;
+
+    //deltaInPut = 0;
+    // private floats
+    error = 0;        //  'Compute' working values are private
+    lastInPut = 0;
+    PTerm = 0;
+    ITerm = 0;
+    DTerm = 0;
+    setControlDirection( DIRECT);   // 0 = DIRECT, 1 = REVERSE, else = ? error ?
+    setControlMode( AUTOMATIC);     // 0 = MANUAL, 1 = AUTO, else = ? error ?
+    setTunings( setP, setI, setD);  // Set tunings as determined by experiment
+    
+    inAuto = false;
 }
 
-void bb_pid::minMax( float &value)
+float bb_pid::minMax( float value)
 {
-    if( value < pidOutMin) value = pidOutMin;
-        else if ( value > pidOutMax) value = pidOutMax;
+    if( value < pidOutMin) return pidOutMin;
+        else if ( value > pidOutMax) return pidOutMax;
+    return value;
 }
 
 //  Compute all the working error variables
 void bb_pid::Compute()
 {
-    if( !inAuto) return;  //  Do not Compute if PID controller is turned off
+    // If Auto is OFF, cancel the function.
+    if( !inAuto) return;
 
-    float error = setPoint - inPut;       //  error = desired value - actual value
     //  Try to guess the slope of change.  When setPoint is constant, use
     //  the derivative of the Input rather than the derivative of the Error.
-    float dInPut = inPut - lastInPut;
-    lastInPut = inPut;    //  Remember the inPut for next time
+    error = setPoint - inPut;       //  error = desired value - actual value
+
+    PTerm = kp * error;
 
     ITerm += ( ki * error);
-    minMax( ITerm);       //  Constrain ITerm to min/max output values
+    ITerm = minMax( ITerm);       //  Constrain ITerm to min/max output values
+
+    DTerm = kd * ( inPut - lastInPut); // DTerm = fraction of input change
+    lastInPut = inPut;              //  save 'inPut' value for next time
 
     //-------------  Compute PID outPut  ----------------
-    outPut_f = (kp * error) + ITerm - ( kd * dInPut);  //  outPut as a float
+    outPut_f = PTerm + ITerm - DTerm;    //  outPut as a float
+    outPut_f = minMax( outPut_f);        //  constrain outPut
+    outPut = floatToInt( outPut_f);      //  round to int in 'routines.cpp'
     //---------------------------------------------------
-
-    minMax( outPut_f);                   //  constrain outPut
-//    outPut = floatToLong( outPut_f);     //  round to long integer in 'routines.cpp'
-    outPut = floatToInt( outPut_f);     //  round to long integer in 'routines.cpp'
 }
 
 void bb_pid::setTunings( float Kp, float Ki, float Kd)
 {
+    // If any tuning is less than zerro, cancel the function
     if( Kp < 0 || Ki < 0 || Kd < 0) return;
 
 //    float SampleTimeInSec = (float)( SampleTime / 1000);
@@ -101,12 +117,14 @@ void bb_pid::setSampleTime( int NewSampleTime)
     }
 }
 
-void bb_pid::setControlMode( uint8_t Mode)
+void bb_pid::setControlMode( bool autoFlag)
 {
-    bool newAuto = ( Mode == AUTOMATIC);
-    // If switch from manual to auto, set 4 main PID variables to 0
-    if( newAuto == !inAuto) zeroPidVar();
-    inAuto = newAuto;
+    if( ( autoFlag == true) &&  // If switching from MANUAL to AUTO...
+        ( inAuto == false))
+    {
+        resetPidVar();          // reset the PID variables.
+    }
+    inAuto = autoFlag;          // Save mode for next time
 }
 
 void bb_pid::setControlDirection( uint8_t Direction)
@@ -151,8 +169,10 @@ void bb_pid::setControlDirection( uint8_t Direction)
           index++;
       }
 
-      // if length is correct and first two bytes are valid, use the data
-      if( index == 26  && ( Auto_Man == 0 || Auto_Man == 1) && ( Direct_Reverse == 0 || Direct_Reverse == 1))
+      // Parse the 26 character input string from Processing...
+      if( index == 26  &&                              // if the length is correct...
+        ( Auto_Man == 0 || Auto_Man == 1) &&           // and the first and second...
+        ( Direct_Reverse == 0 || Direct_Reverse == 1)) // bytes are valid
       {
   //      setPoint = float( foo.asFloat[ 0]);    //  Sending setPoint and inPut values
   //      inPut = float( foo.asFloat[ 1]);       //  from Processing is not necessary

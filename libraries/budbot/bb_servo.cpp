@@ -1,6 +1,8 @@
 /* File Name: bb_servo.cpp
  * Developer: Bud Ryerson
  * Described: One of the first things I ever wrote.
+     This controls setup, testing and control of the servo panning motion
+     of the IR sensor as well as interpretation of data from the sensor.
  * Inception: Probably inherited from budbot1
  * 26DEC15 - converted servo from "bit bang" to
              Atmega's internal PWM generator
@@ -13,279 +15,298 @@
  * 20FEB17 - modified servo to work more precisely and not to
              pulse when Servo is OFF and the servo is centered
  *  8MAR17 - Installed a separate 5V supply for IR sensor
- * 30MAR17 - Replaced burned out analog HiTEc HS322 servo motor with digital Tower Pro MG996R
+ * 30MAR17 - Replaced burned out analog HiTEc HS322 servo motor with
+             digital Tower Pro MG996R.
              Installed another separate 5V supply for servo motor.
              Got rid of IR sensor ring buffer.
              Now sample IR sensor values 10X for each servo reposition.
- * Should include these features: Scan mode, encounter mode, pursuit mode
+ * 26FEB19 - Replaced entire IR sensor code with TFMini-Plus Lidar code.
+             Added MegaServo library to replace the custom servo timing code.
+ * 07MAR19 - Screw the MegaServo library. Went back to hard code for servo PWM.
+             Added interrupt on/off when setting OC registers
+ * 28MAR19 - took lidar out of servo and created separate routine library
+ * 11APR19 - Finally got rid of 'servoOffset'. Mystery solved!
+ * 25APR19 - Servo routines moved to and now called by Lidar routines
+ * Should someday include these features:
+        Scan mode,
+        encounter mode,
+        pursuit mode
  */
 
 //  = = = = = = = =  Compile this file ONLY for the MEGA2560  = = = = = = = =
 #ifdef __AVR_ATmega2560__
 
-#include <Arduino.h>
-#include <bb_defines.h>
-#include <bb_shared.h>
-#include <bb_routines.h>
+    #include <Arduino.h>
+    #include <bb_defines.h>
+    #include <bb_shared.h>
+    #include <bb_routines.h>
+    #include <bb_notes.h>
 
-#include <bb_servo.h>
-bb_servo::bb_servo(){}
-bb_servo::~bb_servo(){}
+    #include <bb_servo.h>
+    bb_servo::bb_servo(){}
+    bb_servo::~bb_servo(){}
 
-int srvPosOff;               //  servo position plus offset
-uint16_t srvRay[ 181];       //  array of IR values
-uint16_t servoOffset;        //  offset value for servo position used in servoPulse()
-//uint16_t minPos = 90;      //  servo position of minimum range value
+    // servos are attached to pins 6 & 7 and rotate from 0-180 degrees by 1 degree increments.
+    int azPin = 6;     // output pin of OC4A is azimuth (az) pin
+    int elPin = 7;     // output pin of OC4B is elevation (el) pin
 
-//  Configure register values and output pin for servo
-void bb_servo::setup()
-{
-    //  = = = = = = = =  IR Scanner Positioning  = = = = = = = =
-    //  A 16MHz clock is divided by a 'prescalar' value of 64 to
-    //  create a 250kHz clock.
-    //  A 10 bit register counts up to 1024 and down again to
-    //  create a 122.25Hz frequency, which has a 8.2ms wavelength.
-    //  The output pin switches state at every OC4A value compare
-    //  thus creating a variable width pulse between 0.9 - 2.1ms.
-    //
-    //  stop all interrupts
-    cli();
-      TCCR4A = 0b10100011; // _BV(COM4A1) | _BV(COM4B1) | _BV(WGM41) | _BV(WGM40);
-      //  Bits 7-6: Compare Output Mode for Channel A1
-      //    Clear OC4A on compare match;
-      //    Set compare to occur at BOTTOM;
-      //    Set output to low level (non-inverting mode).
-      //  Bits 5-4: Compare Output Mode for Channel B1
-      //    Set the same as for Channel A1.
-      //  Bits 3-2: Compare Output Mode for Channel C1
-      //    Set to zero
-      //  Bits 2-0: Waveform Generation Mode
-      //    Phase Correct, 10 bit (1024 count)
-      TCCR4B = 0b00000011; // TCCR4B = _BV(CS41) | _BV(CS40);
-      //    16M clock / 64 prescalar / 2048 (1024 up & down count)
-      OCR4A = 180;
-      //  A 1.5 millisecond pulse on Digital Pin 6
-      //  should result in a 90° servo position
-      OCR4B = 180;
-      //  Do the same on Digital Pin 7
-    sei();
-    //  allow interrupts again
+    // Definitions for the servo library
+    // The robot patform coordinate system ranges from -90 (left) to +90 (right).
+    // The servo coordinate system ranges from 0 to 180 degrees with 90 being straight ahead
+    #define SERVO_MID     90    // zero degrees - level and straight ahead position
 
-    pinMode( servoPin, OUTPUT);  // set Pin 6 (blue) as servo output
-    pinMode( irPin, INPUT);      // IR Sensor analog in pin A01
-                                 // Do not use INPUT_PULLUP
-    resetServo();
-}
+    #define SERVO_MIN    -90    // full left (counter-clockwise from above) and down
+    #define SERVO_MAX     90    // full right (clockwise from above) and up
 
-//  Configure register values and output pin for servo
-void bb_servo::resetServo()
-{
-    memset( &srvRay, 250, sizeof( srvRay));    // clear the Servo Position Array
-    rDat1.srvPos = 0;   //  set position to center
-    servoOffset = 0;    //  set offset to zero
-    servoPulse();       //  strobe the servo
-    firstScan = true;
-    fbCLR( fbServo);    //  set Servo Mode to OFF
-}
+    #define SWEEP_MIN    -60    // sweep direction limits
+    #define SWEEP_MAX     60    // cannot be more than 70
 
-//  = = = = = = = = = =  IR Read  = = = = = = = = = =
-//  Get values from IR sensor, correct and average.
-//  Number of reads to average is in 'define.h' as IR_SAMPLE_SIZE
-//  Roughly convert the average to a distance in centimeters and
-//  return as an unsigned 16 bit integer called 'range'
-uint32_t irTotal = 0;              //  total of all IR samples
-void bb_servo::irRead()
-{
-    irTotal = 0;                       //  clear total of all IR samples
-    for( int x = 0; x < IR_SAMPLE_SIZE; ++x)
+    #define tooNear       10    // distance in centimeters
+    #define tooFar       250
+    #define theZone       50
+
+    // deadband values prevent the robot over reacting to small movements of the object
+    #define dxDeadBand   100    // average rDat1.logDist change without robot body reacting
+    #define pxDeadBand   300    // average pan change without robot body reacting
+
+//    #define    SERVO_CENTER     1520   // center (neutral) servo position in µsec
+//    #define    SERVO_ONE_DEG       9   // one degree of servo position in µsec
+//    #define    SERVO_TWO_DEG      19   // two degrees of position in µsec
+
+    int elPos = SERVO_MID;  // initialize elevation position
+
+    //uint16_t distRay[ 181];  // array of Lidar distance values
+                             // for each servo index value
+
+    int azInc = 1;    // azimuth increment value
+    int elInc = 1;    // elevation increment value
+    int scanQuad = 1; // scan quadrant 1 -4
+
+    //  - - - - - - - -  Servo Setup  - - - - - - - - - - - -
+    //  Configure register values and output pin for servo
+    void bb_servo::setup()
     {
-        //  The IR sensor signal adds a half volt pulse about every
-        //  millisecond that lasts less than 200 microseconds.
-        //  The following cleverness tries to avoid reading that pulse.
-        uint16_t irVal1, irVal2;              //  Declare two local variables.
-        irVal1 = readADCInput( irPin);        //  Get one IR sensor value,
-        microDelay( 200);                     //  wait longer than the bump duration,
-        irVal2 = readADCInput( irPin);        //  and get another IR value.
-        if( irVal2 < irVal1) irVal1 = irVal2; //  Keep the smaller of the two,
-        irTotal += irVal1;                    //  and add it to the total.
+        setupTimer4();
+        delay(20);                 // Wasit for timer to initalize
+
+        pinMode( azPin, OUTPUT);   // set Pin 6 (green) as azimuth servo output
+        pinMode( elPin, OUTPUT);   // set Pin 7 (yellow) as elevation servo output
+
+        servoTest();               //  swivel servo back and forth
+        resetServo();              //  reset servo level/front and turn OFF
+
+        delay(20);                 // And wait a moment
     }
-    //  divide IR total by IR sample size to get average IR value
-    rDat1.avgVal = (uint16_t)(longDiv( irTotal, IR_SAMPLE_SIZE));
-    //  Do rough conversion of IR sensor values to physical distance in centimeters
-    //  from manufacturer's data sheet. Valid between about 8 and 80 centimeters
-    int mapVal = map( rDat1.avgVal, 82, 532, 100, 1100);
-    intConstrain( mapVal, 80, 1200);
-    rDat1.range = (uint16_t)(intDiv( 20000, mapVal));  // save as unsigned integer
-    srvRay[ rDat1.srvPos + 90] = rDat1.range;    //  populate servo array with range values
-}
+    //  - - - - - -  End of Servo Setup  - - - - - - - - - -
 
-//  = = = = = = = = = =  Servo Pulse  = = = = = = = = = =
-//  Offset, constrain and map servo position to a determined set of values for
-//  "Output Compare 4A"  to create a proper pulse width to drive the servo motor.
-//  ** Considering the number of times I have had to replace the servo motor,
-//  ** I need an easier way to match the OCR4A range to the servo angle range.
-//  NOTE: Reducing OC4A value will move the servo to the left.
-void bb_servo::servoPulse()
-{
-    srvPosOff = rDat1.srvPos - servoOffset;             // offset servo position
-    intConstrain( srvPosOff, SERVO_MIN, SERVO_MAX);       // limit position to ±90°
-    OCR4A = map( srvPosOff, SERVO_MIN, SERVO_MAX, 279, 48);
-    // printServoData();
-}
-
-//  = = = = = = = = = =  Pan servo back and forth  = = = = = = = = = =
-//  If Servo is OFF, pulse only until centered and then cease pulsing.
-//  Oddly, the servo reports different angles whether panning right or left.
-//  Also, different brands of servos behave differently.
-//  The servo offset value 'servoOffset' is added to compensate for that behavior.
-int sweepStep = -1;                   //  Initialize sweep direction to the left
-void bb_servo::sweep()
-{
-    if( fbCHK( fbServo))              //  If Servo is ON,
+    //  Configure register values and output pin for servo
+    void bb_servo::resetServo()
     {
-        rDat1.srvPos += sweepStep;    //  then pan servo along horizontal.
-        if( rDat1.srvPos < SWEEP_MIN)  //  If too far left,
-        {
-            sweepStep = 1;            //  set pan direction right.
-            servoOffset = -4;         //  servo offset, not to exceed ±70
-            rDat1.srvPos = SWEEP_MIN + 1;
-            getTarget();
-        }
-        else if( rDat1.srvPos > SWEEP_MAX) //  If too far right,
-        {
-            sweepStep = -1;           //  set pan direction left.
-            servoOffset = 4;          //  offset not to exceed ±70
-            rDat1.srvPos = SWEEP_MAX - 1;
-            getTarget();
-        }
-        servoPulse();                  //  then pulse the servo
+        memset( &srvDat.distRay, 0, sizeof( srvDat.distRay));    // clear the Servo Position Array
+        srvDat.azDex = 90;           // set azimuth idex to center
+        srvDat.azStep = -1;          // initialize sweep direction to the left
+        rDat1.azPos = srvDat.azDex;  // save index to rDat1 for transmittal
+        servoSet();                  // strobe the servo
+        //fbCLR( fbServo);    // Servo = OFF
+        fbCLR( fbSeek);       // Seek  = OFF
+        fbCLR( fbHalt);       // is this necessary?
+        rDat3.seekTimer = millis() + SEEK_INTERVAL;
+        rDat3.haltTimer = millis() + HALT_INTERVAL;
+        firstScan = true;     // for 'scanOnce()' routine
     }
-    else                         //  If Servo is OFF,
-    {                            //
-        if( rDat1.srvPos != 0)   //  pulse servo until centered
-        {                        //
-            if ( rDat1.srvPos > 0) --rDat1.srvPos;
-            else if ( rDat1.srvPos < 0 ) ++rDat1.srvPos;
-            servoPulse();        //
-        }                        //
-        else servoOffset = 0;    //  zero offset when centered
-                                 //  no pulse when centered
-        // Test print for stuttering servo
-        //   printf("Servo Dir: % 04i", rDat1.srvPos);
-        //   printf("\r\n");
-    }
-}
 
-//  = = = = = = = =  Sweep servo back and forth one time  = = = = = = = =
-//  Periodically, robot will stop and scan one time.
-//  This may be more useful than continuous panning since landmarks can
-//  be sensed, stored, and possibly identified as location beacons
-void bb_servo::scanOnce()
-{
-    if( fbCHK( fbServo))              //  If Servo is ON,
+    //  = = = = = = = = = =  Servo Set  = = = = = = = = = = = = = =
+    //  Set azimuth and elevation servo positions in T4 timer ticks
+    //  = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+    void bb_servo::servoSet()
     {
-        if( firstScan)
+        // convert azimuth index value to Timer4 ticks
+        int azTick = floatToInt( srvDat.azDex * 1.22) + 55;
+        // constrain range of ticks to 55 - 275 or ±90°
+        azTick = intConstrain( azTick, 55, 275);
+        // do the same for elevation servo position
+        //int elTick = floatToInt( ( rDat1.elPos + 90) * 1.22) + 55;
+        //elTick = intConstrain( elTick, 55, 275);    // limit position within ±90°
+
+        // Set Output Compare registers for Timer 4A & 4B
+        cli();     // suspend all interrupts while setting registers
+          OCR4A = azTick;    // set according to azimuth servo position
+          OCR4B = 180;       // set to counter ticks for 90°
+        sei();     // re-enable all interrupts
+    }
+
+    //  = = = = = = = = = =  Pan servo back and forth  = = = = = = = = = =
+    //  If Servo is OFF, pulse only until centered and then cease pulsing.
+    //#define SEEK_TIME 5000        //  stop and seek target every 5 secs
+    //uint32_t seekTimer;
+   //srvDat.azStep = -1;           //  Initialize sweep direction to the left
+    void bb_servo::sweep()
+    {
+        if( fbCHK( fbServo))       // If SERVO is TRUE do one of two things
         {
-            rDat1.srvPos = SWEEP_MIN;   //  then pan servo along horizontal.
-            servoOffset = -4;           //  servo offset, not to exceed ±70
-            servoPulse();
-            firstScan = false;
-        }
-        else
-        {
-            if( rDat1.srvPos < SWEEP_MAX)
+            if( fbCHK( fbAuto))        // If in AUTO mode...
             {
-                ++rDat1.srvPos;
-                servoPulse();
+                if( fbCHK( fbSeek))    // and if SEEK is TRUE...
+                {
+                    scanOnce();        // immediately move to left postion and settle
+                }                      // sweep once right, once left and return to center
             }
             else
             {
-                getTarget();
-                rDat1.srvPos = SERVO_MID;
-                servoOffset = 0;           //  servo offset, not to exceed ±70
-                servoPulse();
-                firstScan = true;
-                fbCLR( fbServo);
+                if( srvDat.azDex <= 30)    // If left limit...
+                {
+                    srvDat.azDex = 30;     // constrain the position...
+                    srvDat.azStep = 1;     // and set direction right.
+                    getTargets();
+                }
+                else if( srvDat.azDex >= 150) // If at right limit...
+                {
+                    srvDat.azDex = 150;       // constrain the position...
+                    srvDat.azStep = -1;       // and set direction left.
+                    getTargets();
+                }
+                srvDat.azDex += srvDat.azStep;  // Increment the position...
+                servoSet();                     // and pulse the servos.
+            }
+        }
+        else                       //  If Servo is OFF,
+        {                          //
+            if( srvDat.azDex != 90)       //  pulse servo until centered
+            {                      //
+                if ( srvDat.azDex > 90) --srvDat.azDex;
+                else if ( srvDat.azDex < 90 ) ++srvDat.azDex;
+                servoSet();
+            }
+            else
+            {
+              resetServo();
             }
         }
     }
-    else                         //  If Servo is OFF,
-    {                            //
-        if( rDat1.srvPos != 0)   //  pulse servo until centered
-        {                        //
-            if ( rDat1.srvPos > 0) --rDat1.srvPos;
-            else if ( rDat1.srvPos < 0 ) ++rDat1.srvPos;
-            servoPulse();        //
-        }                        //
-        else servoOffset = 0;    //  zero offset when centered
-    }
-}
 
-//  = = = = = = = = = =  Servo Test  = = = = = = = = = =
-//  Swivel the neck from -90 to +90 degrees and return to center
-void bb_servo::test()
-{
-    rDat1.srvPos = 0;  //  set servo position to center
-    servoOffset = 0;
-    int pStep = -1;           //  set position step leftwards
-    for( int x = 0; x < 360; ++x)
+    //  = = = = = = = =  Sweep servo back and forth one time  = = = = = = = =
+    //  At set intervals, stop and scan once back and forth.
+    //  This may be more useful than continuous panning since landmarks can
+    //  be sensed, stored, and possibly identified as location beacons
+    #define SCAN_ONCE_DELAY   400UL     //  Half second in milliseconds
+    uint32_t sodTimer;                  //  Scan Once Delay Timer
+    void bb_servo::scanOnce()
     {
-        //  if either limit encountered, flip the position increment sign
-        if( rDat1.srvPos <= SERVO_MIN || rDat1.srvPos >= SERVO_MAX) pStep *= -1;
-        rDat1.srvPos += pStep;        //  increment position
-        servoPulse();
-        milliDelay( 10);
+        if( firstScan)                  // initialized 'true' in setup
+        {
+            srvDat.azStep = 1;          //  Initialize sweep direction to the right
+            srvDat.azDex = 30;          //  set servo position to far left
+            // set timer to current time plus delay
+            sodTimer = millis() + SCAN_ONCE_DELAY;
+            firstScan = false;          // reset firstScan
+        }
+        if( sodTimer < millis())       // When millis() catches up to timer
+        {
+            if( srvDat.azDex <= 150)   // If not at right limit
+            {
+                servoSet();            //  pulse the servos
+                ++srvDat.azDex;
+            }
+            else
+            {
+                getTargets();        // getr near and far targets
+                resetServo();        // center servo and clear flags.                
+            }
+        }
     }
-    while( rDat1.srvPos != 0)  // pulse servo until centered
+
+    // This will scan through the Lidar distance value array
+    // amd identify the nearest and furthest values to guide
+    // the AUTO-directed motion of the platform.
+    // • SEEK mode will steer toward the nearest target.
+    // • FLEE will steer toward the furthest target.
+    int nDex, fDex;  // target indices
+    void bb_servo::getTargets()
     {
-        if ( rDat1.srvPos > 0) --rDat1.srvPos;
-        else if ( rDat1.srvPos < 0 ) ++rDat1.srvPos;
-        servoPulse();
-        milliDelay( 10);
+        rDat3.nearDex = 90;  // nearest point index
+        rDat3.farDex  = 90;  // furthest point index
+        // scan distance value arrray from west to east
+        for( int i = 30; i <= 150; ++i)
+        {
+          // find the nearest point
+          if( srvDat.distRay[ i] < srvDat.distRay[ rDat3.nearDex]) rDat3.nearDex = i;
+          // find the furthest point
+          if( srvDat.distRay[ i] > srvDat.distRay[ rDat3.farDex]) rDat3.farDex = i;
+        }
+        // rDat3.nearDex = nDex;
+        // rDat1.course = rDat3.nearDex - 90;
     }
-    fbCLR( fbServo);       //  set Servo Mode OFF
-    //resetServo();  // turn Servo OFF and return to center
-}
 
-// This will identify and categorize IR shadows as "targets"
-// to determine the auto-directed motion of the platform.
-// There will be no more than three targets: shad0, shad1, shad2
-//   shad0 - the closest target to the heading of the platform
-//   shad1 - the nearest westward target
-//   shad2 - the nearest eastward target
-// Shadow Structure:
-//   distance: less than 250
-//   left edge position
-//   right edge position
-//   size
-//   direction
-//  For some reason, maybe extra draw from the servo motor,
-//  we need to ignore readings that are close to the limit.
-//  They seem to go low.  A reason for separate power supply?
-void bb_servo::getTarget()
-{
-    int nPos1 = 30;   // far west
-    int nPos2 = 150;  // far east
-    int nPos3 = 90;   // center
-    // find the westernmost, nearest point
-    for( int i = 30; i <= 150; ++i)
-      if( srvRay[ i] < srvRay[ nPos1]) nPos1 = i;
-    // find the easternmost, nearest point
-    for( int i = 150; i >= 30; --i)
-      if( srvRay[ i] < srvRay[ nPos2]) nPos2 = i;
-    nPos3 = nPos1 - nPos2;             // find width of shadow
-    nPos3 = intDiv( nPos3, 2);         // find middle position
-    nPos3 = nPos2 + nPos3 - SERVO_MID;  // convert to bearing ±90°
-    intConstrain( nPos3, SWEEP_MIN, SWEEP_MAX);      // constrain to ±60°
-    rDat1.nearPos = nPos3;             // save as 'near' position
-}
 
-void bb_servo::printServoData()
-{
-    printf( "Pan Position: % 3i |", rDat1.srvPos);     //  A = Azimuth
-    printf( "Range: %u |", rDat1.range);
-    printf( "Pan Pulse: % 3i", map( rDat1.srvPos,  SERVO_MIN, SERVO_MAX, 70 + servoOffset, 290 + servoOffset));
-    printf("\r\n");
-}
+/*    //  = = = = = = =  Check Scan Timer  = = = = =
+    //  Stop everything and perform scan.
+    //  Only check while in AUTO or PROGRAM mode
+    #define SCANTIME 5000                   //  Define SCANTIME as 5 seconds
+    unsigned long scanTimer = SCANTIME;     //  Initialize scan timer
+    void bb_servo::checkScanTimer()
+    {
+      if( scanTimer < millis())             // if scan timer expired
+      {
+          servoTest();
+          scanTimer = millis() + SCANTIME;  // reset scan timer.
+      }
+    }
+*/
+
+    //  = = = = = = = = = =  Servo Test  = = = = = = = = = =
+    //  Swivel the neck from -90 to +90 degrees and return to center
+    void bb_servo::servoTest()
+    {
+        srvDat.azDex = 90;  //  set azimuth index to center
+        srvDat.azStep = -1;           //  set position step leftwards
+        for( int x = 0; x < 360; ++x)
+        {
+            //  if either limit encountered, flip the position increment sign
+            if( srvDat.azDex <= 0 || srvDat.azDex >= 180)
+            {
+              playNote( 2);
+              srvDat.azStep *= -1;   // reverse the sign
+            }
+            srvDat.azDex += srvDat.azStep;        //  increment position
+            servoSet();
+            milliDelay( 10);
+        }
+        while( srvDat.azDex != 90)  // pulse servo until centered
+        {
+            if ( srvDat.azDex > 90) --srvDat.azDex;
+            else if ( srvDat.azDex < 90 ) ++srvDat.azDex;
+            servoSet();
+            milliDelay( 10);
+        }
+        playNote( 2);
+        fbCLR( fbServo);       //  set Servo Mode OFF
+        //resetServo();  // turn Servo OFF and return to center
+    }
+
+    void bb_servo::printServoData()
+    {
+        printf( "Pan Position: % 3i |", rDat1.azPos);     //  A = Azimuth
+        printf( "Distance: %u |", rDat1.dist);
+      //  printf( "Pan Pulse: % 3i", map( rDat1.azPos,  SERVO_MIN, SERVO_MAX, 70, 290));
+        printf("\r\n");
+    }
+
+ /*   void bb_servo::tilt()
+    {
+      if( elPos <= lowStop || elPos >= highStop)   // if elevation too high or low
+      {
+        elPos = highStop;     // set elevation to highStop
+        if( elInc != 0)       // if not on secondary scan
+        {
+          elInc = 0;          // set flag to secondary scan
+          elPos += 10;        // offset highStop position
+        }
+        else elInc = 1;       // set flag to primary scan
+      }
+      // set servo position between -20° and +20° (1070 - 1920 usec)
+      elServo.writeMicroseconds( (int)elPos);
+      elPos -= SERVO_TWO_DEG;
+    }
+*/
 
 #endif  //  #if defined(__AVR_ATmega2560__)

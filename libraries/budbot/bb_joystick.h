@@ -40,19 +40,20 @@
       public:
           bb_joystick();    //  library constructor
           ~bb_joystick();   //  library destructor
+
           bool  contact;    //  Contact established with PC
           bool  putFlag;    //  Ready to write data to PC
           bool  getFlag;    //  Ready to read data back from PC.
          
           void setup();
-          void checkJoyButtons();
+//          void checkJoyButtons();
           void readData();
           void showLights();
           void printJoyData();
           void putPaneData();
           void getPaneData();
-          void callPane();
-          void paneDataLoop();
+//          void callPane();
+//          void paneDataLoop();
           void printAllData();
   };
 

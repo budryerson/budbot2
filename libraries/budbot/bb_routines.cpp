@@ -3,8 +3,8 @@
  * Developer: Bud Ryerson
  * Described: C++ source file implementation of declared general
  *            and universal budbot2 functions and variables.
- * Last Work: 15SEP16 - changed the reference voltage for the
- *            ADC read routine from 2.5v to VCC.
+ * Last Work: 07MAR19 - moved Timer 4 PWM generator setup
+ *            for servos to here from 'servo.cpp'
  */
 
 #include <Arduino.h>
@@ -30,25 +30,14 @@ void milliDelay( int md)
     while( millis() < milliTimer);   // wait for millis timer to catch up
 }
 
-//  Convert floating point number to long integer with rounding.
-long floatToLong( float value)
-{
-  if( value >= 0) value += 0.5; else value -= 0.5;
-  return (long)value;
-}
-
-//  Convert floating point number to integer with rounding.
-int floatToInt( float value)
-{
-  if( value >= 0) value += 0.5; else value -= 0.5;
-  return (int)value;
-}
-
+//  Integer is defined as a 16 bit signed number: -32K to +32K
+// = = = = = = =  INTEGER MANIPULATION Routines  = = = = = = = =
 //  Constrain an integer to a given range of integers
-void intConstrain( int &value, int low, int high)
+int intConstrain( int value, int low, int high)
 {
-    if( value < low) value = low;
-    else if ( value > high) value = high;
+    if( value < low) return low;
+    else if ( value > high) return high;
+    return value;
 }
 
 // integer division with rounding
@@ -68,6 +57,8 @@ int intDiv( int n, int d)
     else return ( n / d);
 }
 
+//  Long Integer is defined as a 32 bit signed number
+// = = = = = = LONG INTEGER MANIPULATION Routines  = = = = = = = =
 // long integer division with rounding
 // n = numerator; d = denominator
 long longDiv( long n, long d)
@@ -83,7 +74,22 @@ long longDiv( long n, long d)
         return (long)( (unsigned long)( n + d - 1) / ( unsigned long)d);
     }
     else return ( n / d);
- }
+}
+
+// = = = = = = =  FLOAT MANIPULATION Routines  = = = = = = = =
+//  Convert floating point number to integer with rounding.
+int floatToInt( float value)
+{
+  if( value >= 0) value += 0.5; else value -= 0.5;
+  return (int)value;
+}
+
+//  Convert floating point number to long integer with rounding.
+long floatToLong( float value)
+{
+  if( value >= 0) value += 0.5; else value -= 0.5;
+  return (long)value;
+}
 
 // prints val with up to six decimal places given by precision
 // example: printFloat( 3.1415, 2) prints 3.14 (two decimal places)
@@ -133,9 +139,9 @@ void fbSET( int index)
   rDat1.flagBits |= ( longOne << index);
 }
 
-bool fbCHK( int index)
+bool fbCHK( int index) // FALSE = 0; TRUE = 1;
 {
-  return  rDat1.flagBits & ( longOne << index);
+  return (bool)( rDat1.flagBits & ( longOne << index));
 }
 
 void fbTOG( int index)
@@ -163,23 +169,66 @@ void clearDataStructures()
 {
     memset( &jDat,  0, sizeof( jDat));   //  clear joystick data structure
     //  jDat values .serial, .radio and .mpxID are all set to 0 or 'false'
-    jDat.mpxID = jDatID;                 //  set ID bit pattern to 1100 1101
     memset( &rDat1, 0, sizeof( rDat1));  //  clear platform data structure 1
-    rDat1.mpxID = rDat1ID;               //  set ID bit pattern to 1001 0110
     memset( &rDat2, 0, sizeof( rDat2));  //  clear platform data structure 2
-    rDat2.mpxID = rDat2ID;               //  set ID bit pattern to 0110 1001
+    /*
+    jDat.mpxID = jDatID;      //  set mpxID byte to 0xCD or 0b11001101 - 'defines.h'
+    rDat1.mpxID = rDat1ID;    //  set mpxID byte to 0x96 or 0b10010110 - 'defines.h'
+    rDat2.mpxID = rDat2ID;    //  set mpxID byte to 0x69 or 0b01101001 - 'defines.h'}
+    */
 }
 // - - - - - - - - -  End of Clear Radio Data Structure  - - - - - - - - -
 
+// = = = = = = =  Print All Data Structures  = = = = = = =
+  // Lookup table for Hexadecimal characters
+  const char hex_str[] = "0123456789ABCDEF";
+  // Print All Data (PAD) line output buffer array
+  char padBuf[] = "00000000|00000000|00000000|00000000|00000000|00000000|00000000|00000000";
 
+      // subroutine for 'printAllData' function
+      void makeDataLine( void * src)
+      {
+          char * cSrc = (char *)src;      // recast 'src' pointer as 'char' pointer
+                                          // pointers can be addressed like an array
 
+          int padBufIndex = 0;
+          int cSrcIndex = 0;
+          for (int x = 0; x < 8; ++x)     // divide the packet into eight long integers
+          {
+              for( int y = 0; y < 4; ++y) // divide each long integer into 4 bytes
+              {
+                  padBuf[ padBufIndex] = hex_str[ ( cSrc[ cSrcIndex] >> 4) & 0x0F];
+                  ++padBufIndex;
+                  padBuf[ padBufIndex] = hex_str[ cSrc[ cSrcIndex] & 0x0F];      // faster version
+                  ++padBufIndex;
+                  ++cSrcIndex;
+              }
+              ++padBufIndex;  // skip the separator
+          }
+      }
+
+void printAllData()
+{
+    printf( DASHLINE);
+    makeDataLine( &jDat);
+    printf( " jDat: %s\r\n", padBuf);
+    makeDataLine( &rDat1);
+    printf( "rDat1: %s\r\n", padBuf);
+    makeDataLine( &rDat2);
+    printf( "rDat2: %s\r\n", padBuf);
+}
+// - - - - - - -  End of Print All Data Structure  - - - - - - -
+
+//  = = = = = = = =  Platfrom Only Routines  = = = = = = = = =
 #ifdef __AVR_ATmega2560__
   //  ------------------------------------------------------
   //  Custom routine for reading analog to digital inputs
+  //  This is used only in 'alarms.cpp' to test motor current.
+  //  It was used in 'servo.cpp' to read the IR sensor.
   //  ------------------------------------------------------
   //  Sets multiplexer to input channel and gets ADC data
   //  Includes a recommended discard of the first conversion
-  //  Returns an unsigned integer value.
+  //  Returns a 16 bit unsigned integer value.
   uint16_t readADCInput( uint8_t adcIn)
   {
       //  Register Description begins on p.281 of the Mega256 data sheet
@@ -194,11 +243,11 @@ void clearDataStructures()
           SET( ADCSRB, 3);   // MUX 5 (ADCSRB:3)instead
           SET( ADMUX, 7);    // set 1.1V as reference
       }
-      else
-      {                        // When reading IR sensor
+      else // ********  Deprecated 26FE19. Not using IR sensor anymore  ********
+      {                        // When reading IR sensor (Input A1)
           SET( ADMUX, 6);      // set AVCC as reference
    //       SET( ADMUX, 6);    // set 2.56V as reference
-   //       SET( ADMUX, 7);
+   //       SET( ADMUX, 7);    // set 1.1V as reference
           CLR( ADCSRB, 3);     // and turn OFF MUX5
       }
       SET( ADCSRA, 7);       // Set Reg A bit 7 = Enable ADC (ADEN)
@@ -240,26 +289,66 @@ void clearDataStructures()
         TCCR3B = 0;                 // clear the 3B register
         // Register is set by shifting 0b00000001 by CS12 bits to the left.
         // Then bitwise OR into the current value of TCCR3B, which is zero.
+        // Enable CTC or "Clear Timer on Compare" intrerrupt mode, resets on OCR3A
         TCCR3B |= ( 1 << WGM32) | ( 1 << CS32);  // CTC Mode and 256 prescaler
         //  TCCR3B |= (  1 << WGM32) | ( 1 << CS31) | ( 1 << CS30);  // CTC Mode and 64 prescaler
         //  TCCR3B |= ( 1 << CS32) | ( 1 << CS30); // sets 1024 as prescaler
         //  Similar Code:  TCCR3B |= _BV(CS12); or TCCR3B = 4;
-        TIMSK3 |= ( 1 << OCIE3A);    // enable CTC or "Clear Timer on Compare" interrupt
+        TIMSK3 |= ( 1 << OCIE3A);    // enable interrupt on register a compar
+        TIMSK3 |= ( 1 << OCIE3B);    // enable interrupt on register B compar
         TCNT3 = 0;      // initialize 16 bit counter value to 0
                         // this will be reset after every compare
-        OCR3A =  3124;  // set Output Compare Register 3A to 0.05 sec
+        OCR3A = 3124;   // set Output Compare Register 3A to 0.05 sec
                         // 16,000,000/sec clock / 256 prescalar = 62,500/sec
                         // 62,500/sec * 0.05 sec = 3125
                         // OCR3A = 3125 - 1
-        //  OCR3A =  1562;  // set Output Compare Register 3A to 0.025 sec
+        //OCR3A = 2000;   // set Output Compare Register 3A to 0.05 sec
+        OCR3B = 1562;   // set Output Compare Register 3B to 0.025 sec
+       //  OCR3A = 1249;   // set Output Compare Register 3A to 0.02 sec
     sei();  //  allows interrupts again
   }
+  
+  //  Set Timer 4 to create two variable width pulse signals
+  //  for the azimuth and elevation servos.
+  void setupTimer4()
+  {
+    //  A 16MHz clock is divided by a 'prescalar' value of 64 to
+    //  create a 250kHz clock.
+    //  A 10 bit register counts up to 1024 and down again to
+    //  create a 122.25Hz frequency, which has a 8.2ms wavelength.
+    //  Output Pin 6 switches state at every OC4A value compare
+    //  thus creating a variable width pulse between 0.9 - 2.1ms.
+    //  Output Pin 7 does the same for OC4B
+    //
+    //  stop all interrupts
+    cli();
+        TCCR4A = 0b10100011; // _BV(COM4A1) | _BV(COM4B1) | _BV(WGM41) | _BV(WGM40);
+        //  Bits 7-6: Compare Output Mode for Channel A1
+        //    Clear TCNT4 on compare match;
+        //    Set compare to occur at BOTTOM;
+        //    Set output to low level (non-inverting mode).
+        //  Bits 5-4: Compare Output Mode for Channel B1
+        //    Set the same as for Channel A1.
+        //  Bits 3-2: Compare Output Mode for Channel C1
+        //    Set to zero
+        //  Bits 2-0: Waveform Generation Mode
+        //    Phase Correct, 10 bit (1024 count)
+        TCCR4B = 0b00000011; // TCCR4B = _BV(CS41) | _BV(CS40);
+        //    16M clock / 64 prescalar / 2048 (1024 up & down count)
+        OCR4A = 180;
+        //  A 1.5 millisecond pulse on Digital Pin 6
+        //  should result in a 90° servo position
+        OCR4B = 180;
+        //  Do the same on Digital Pin 7
+    sei();
+  }
+
 
   //  Print various platform data to platform serial port
   //  For test purposes - Must be connected to serial line
   void printRobotData()
   {
-      printf("jDat:");
+/*      printf("jDat:");
       printf( "|JSC%10lu", jDat.joyClock);  //   Platform Clock in milliseconds
       printf( "|JLC%10lu", jDat.joyLoop);   // joystick Loop Counter
       printf( "|JSB");
@@ -270,23 +359,28 @@ void clearDataStructures()
 
       printf( " |JX%4i|JY%4i", jDat.jvX, jDat.jvY);      //  joystick values: 0 - 1023
       printf( " |PV% 04i|PR% 04i", jDat.velocity, jDat.rotation);  //  motion values: -255 to 255
-
-      printf( " rDat1");
-      printf( " |RV% 04i |RR% 04i", rDat1.velocity, rDat1.rotation);
-      printf( " |SP% 04i", rDat1.srvPos);  //  Servo Pan Position: 0 - 180°
-
-      printf("|FB");
+*/
+/*      printf( " rDat1");
+      printf( " |Vel% 04i |Rot% 04i", rDat3.velocity, rDat3.rotation);
+*/      
+      printf( " |azPos% 04i", rDat1.azPos);  //  Servo Pan Position: 0 - 180°
+      printf( " |Dist% 04u", rDat1.dist);
+      printf( " |Flux% 05u", rDat1.flux);      
+      printf( " |Temp% 04u°F", rDat3.tmpF);
+/*
+      printf("|FlagBits");
       for( int x = 0; x < 32; ++x)
       {
           if( ( rDat1.flagBits >> x) & 1) printf( "1"); else printf( "0");
       }
       printf( " rDat2");
-      printf( "|BSC%10lu", rDat2.botClock);   //  roBot System Clock in milliseconds
-      printf( "|BLC%10lu", rDat2.botLoop);  //  roBot Loop Counter
+*/    printf( " |Clk%10lu", rDat2.botClock);   //  roBot System Clock in milliseconds
+      printf( " |Loop%5u", rDat2.loopTime);   //  roBot loop time in milliseconds
+/*      printf( "|BLC%10lu", rDat2.botLoop);  //  roBot Loop Counter
 
       printf("eD:% 7iL ", eDatL.epc);        //  total Left encoder count
-      printf( "dP% 7iY", rDat2.drPosY);      // dead reckoning position Y
-
+      printf( "dP% 7iY", imuDat.drPosY);      // dead reckoning position Y
+*/
       //      printf("tSpd: % 4iL | % 4iR ", motDatL.mSpdTarget, motDatR.mSpdTarget);
 //      printf("mDir: % 2iL | % 2iR ", motDatL.mDir, motDatR.mDir);
 //      printf("mSpdL: % 4i ", rDat1.motorSpeedLeft);       //  speed ±255
@@ -300,55 +394,17 @@ void clearDataStructures()
 //      printf("M%1u ", fbCHK( fbMotor));     //  isMotorON
 //      printf("S%1u ", fbCHK( fbServo));     //  isServoON
 //      printf("A%1u ", fbCHK( fbAuto));      //  isAutoMode
-      //printf("E%1u ", fbCHK( fbEvade));     //  is running evasion program
-      //printf("| mCurrent: ");
-      //printf("LF %05u ", rDat2.motCurRay[ 0]); //  Motor Current
-      //printf("RF %05u ", rDat2.motCurRay[ 1]);
-      //printf("LR %05u ", rDat2.motCurRay[ 2]);
-      //printf("RR %05u", rDat2.motCurRay[ 3]);
+      printf(" |pReset%1u ", fbCHK( fbPosReset));      //  position reset
+//      printf("E%1u ", fbCHK( fbEvade));     //  is running evasion program
+//      printf("| mCurrent: ");
 
+/*    printf("| LF %05u ", rDat2.mcRay[ 0]); //  Motor Current
+      printf("RF %05u ",  rDat2.mcRay[ 1]);
+      printf("LR %05u ",  rDat2.mcRay[ 2]);
+      printf("RR %05u",   rDat2.mcRay[ 3]);
+*/
       printf("\r\n");                       //  end of line
   }
-  
-  // = = = = = = =  Print All Data Structures  = = = = = = =
-  // - - - - - - -  only for testing purposed  - - - - - - -
-
-      // subroutine for 'printAllData' function
-      void printDataLine( uint8_t charRay[] )
-      {
-          // Lookup table for Hexidecimal numbers
-          const char hex_str[] = "0123456789ABCDEF";
-          static char buf2[] = "00000000|00000000|00000000|00000000|00000000|00000000|00000000|00000000";
-          int z = 0;
-          for (int x = 0; x < 8; ++x)
-          {
-              for( int y = 0; y < 4; ++y)
-              {
-                  buf2[ z] = hex_str[ ( charRay[ (x * 4) + y] >> 4) & 0x0F];
-                  ++z;
-                  buf2[ z] = hex_str[ ( charRay[  (x * 4) + y]) & 0x0F];
-                  ++z;
-              }
-              ++z;
-          }
-          printf("%s\r\n", buf2);
-      }
-
-  void printAllData()
-  {
-      printf( DASHLINE);
-      static uint8_t charRay[ 32];
-      memmove( &charRay, &jDat, 32);
-      printf( " jDat: ");
-      printDataLine( charRay);
-      memmove( &charRay, &rDat1, 32);
-      printf( "rDat1: ");
-      printDataLine( charRay);
-      memmove( &charRay, &rDat2, 32);
-      printf( "rDat2: ");
-      printDataLine( charRay);
-  }
-  // - - - - - - -  End of Print All Data Structure  - - - - - - -
 
 #endif   // - - - - - #if defined(__AVR_ATmega2560__) - - - - - - - -
 

@@ -1,8 +1,8 @@
-/* File Name: bb_alarm.h
- * First Day: lost in the mists of time
+/* File Name: bb_alarm.cpp
  * Developer: Bud Ryerson
- * Last Work: 8JUL16 - added four FC-51 corner LED collision detectors
- *  14FEB17
+ * Inception: lost in the mists of time 
+ * Last Work:  8JUL16 - added four FC-51 corner LED collision detectors
+ *            07MAR19 - increased deboounce time to 20ms
  * Described: definition of variables and functions supporting "alarm"
  *            There are four kinds of alarms
  *            1. Over current on a motor
@@ -22,10 +22,11 @@
   #include <bb_shared.h>
   #include <bb_routines.h>
 
-  //bb_alarm::bb_alarm(){}
-  //bb_alarm::~bb_alarm(){}
+  bb_alarm::bb_alarm(){}   // Constructor
+  bb_alarm::~bb_alarm(){}
 
-  //  Initiate arrays of Left Front, Right Front, Left Rear & Right Rear sensor pins
+  // Initiate arrays of Left Front, Right Front, Left Rear & Right Rear sensor pins
+  // aa given in 'defines.h'
   const int odPin[ 4]  =  { odPinLF, odPinRF, odPinLR, odPinRR};     //  Obstacle Detect digital input pins
   const int odePin[ 4] =  { odePinLF, odePinRF, odePinLR, odePinRR}; //  Obstacle Detect Enable digital out pins
   const int odFlag[ 4] =  { odFlagLF, odFlagRF, odFlagLR, odFlagRR}; //  Obstacle Detect flagBits in rDat1.flagBits
@@ -34,20 +35,22 @@
   const int rLEDpin[ 4] = { rBluPin, rRedPin, rYlwPin, rGrnPin};     //  Robot LED digital output pins
 
   //  Configure input pins for various alarm sensors
-  void setupAlarm()
+  void bb_alarm::setup()
   {
       for( int x = 0; x < 4; ++x)
       {
           pinMode( odPin[ x], INPUT_PULLUP); // set Object Detector pins
           pinMode( odePin[ x], OUTPUT);      // set Object Detector Enable pins
       }
-      for( int x = 0; x < 4; ++x) pinMode( mcPin[ x], INPUT);     // Set Motor Current pins
+      for( int x = 0; x < 4; ++x) pinMode( mcPin[ x], INPUT_PULLUP);     // Set Motor Current pins
       for( int x = 0; x < 4; ++x) pinMode( rButPin[ x], INPUT);   // Set platform Button pins
       for( int x = 0; x < 4; ++x) pinMode( rLEDpin[ x], OUTPUT);  // Set platform LED pins
+
+      sigState = 0;  // initalize signal bit state for toggleFlagBits()
   }
 
-  // Light an LED to match rDat1 flagBit state
-  void showLED()
+  // Set LEDs to match rDat1 flagBit status
+  void bb_alarm::showLED()
   {
       digitalWrite( rRedPin, fbCHK( fbMotor )); //  fbMotor = 1, Motors are in run mode
       digitalWrite( rGrnPin, fbCHK( fbAuto  )); //  fbAuto = 1,  platform is Autonomous
@@ -56,108 +59,144 @@
      // digitalWrite( rBluPin, fbCHK( fbRadio )); //  fbRadio = 1, received valid jDat data
   }
 
-  //  Check jDat signal bits to toggle rDat1 flag bits
-  //  Check jDat modes to set rDat1 flag bits
-  //  Turn on LEDs.
-  void toggleFlagBits()
+  // Called by main Control routine in 'control.cpp'
+  // Set modes according to signals from the joystick.
+  //   1. Check jDat signal bits,
+  //   2. Set platform modes accordingly. and
+  //   3. Illuminate platform LEDs as appropriate.
+  
+  void bb_alarm::toggleFlagBits()
   {
-      static uint16_t sigState = 0;       // Initialize once this function's
-                                          // signal state storage variable
-      if( jDat.sigBits != sigState)       // If any jDat signal bit is new,
+      //  1. Compare jDat signal bits to saved sigState to see if
+      //  any bit has changed, and toggle the corresponding flagbit.
+      if( jDat.sigBits != sigState)       //
       {
-          for( int x = 0; x < 16; ++x)    // then loop through every bit
+          for( int x = 0; x < 16; ++x)    // then loop through 16 bits
           {
               if( CHK( jDat.sigBits, x))  // and for each signal bit that's set,
               {
                   fbTOG( x);              // toggle the rDat1 flagBit.
               }
           }
-          sigState = jDat.sigBits;        // Save new state of jDat signal bits.
+          sigState = jDat.sigBits;        // Save the status of jDat signal bits.
       }
 
-      // Manual flagBit is set if joystick is out of dead zone
+      // 2. Set platform flag bits according to jDat data
+      // ( Cannot use rDat values because Auto mode changes those.)
       fbBUT( fbManual, ( jDat.velocity || jDat.rotation != 0));
-      fbBUT( fbRadio, jDat.radio);
+      fbBUT( fbRadio, jDat.radioIRQ);
       fbBUT( fbSerial, jDat.serial);
-      showLED();                          // Light the platform LEDs.
+
+      // 3. Light the corresponding platform LEDs.
+      showLED();
   }
 
-  //  Return TRUE if any Motor Current value is too high.
-  bool testMotorCurrent()
+  //  Called by first line of main Control routine in 'control.cpp'
+  //  Get and store the analog current value for each motor,
+  //  and return True if ANY Motor Current value is too high.
+  bool bb_alarm::testMotorCurrent()
   {
-      bool tooHigh = false;
-      for( uint8_t x = 0; x < 4; x++)  // analog inputs 8 - 11
+      static bool tooHigh;
+      tooHigh = false;
+      // Recast the 'uint32_t' pointer as a 'uint8_t' pointer
+      // and assign it to point to a 'uint8_t' variable.
+      // Then address the pointer like an array.
+      //uint8_t * mcRay = ( uint8_t *)rDat2.motCurRay;
+      uint16_t adcInput;
+      for( uint8_t i = 0; i < 4; i++)  // analog inputs 8 - 11
       {
-          rDat2.motCurRay[ x] = lowByte( readADCInput( mcPin[ x]));       //  get low byte value of ADC read
-          if( rDat2.motCurRay[ x] > MOTOR_CURRENT_HIGH) tooHigh = true;;  //  set 'Stall' if value too high
+          //  ADC read returns a 'uint16_t' type variable.
+          //  Save only the least significant 8 bits to mcRay.
+          adcInput = readADCInput( mcPin[ i]);
+          rDat2.mcRay[ i] = ( uint8_t)adcInput;   // return low order byte
+          //  If any value is too high, return TRUE to set 'fbFault'.
+          if( rDat2.mcRay[ i] > MOTOR_CURRENT_HIGH) tooHigh = true;
       }
       return tooHigh;
   }
 
-  // Test for an Output pulse, then check for proper length.
-  // Object flag set by any detector, reset by Joystick motion.
+  // - - - -  Object Detector  - - - -
+  // The Object flag (fbObject) is toggled on/off by Robot Button #4
+  // and it is reset by any Joystick motion (fbManual).
+  // The particular Object Detect flag (odFlagXX) is set by the corner
+  // at which detection occurs.
+  // The whole process takes less than a millisecond.
+  // Test for an Output pulse and check for proper length.
   //   odPin is normally HIGH. Goes LOW when object detected.
   //   LOW (false) = 0, HIGH (true) > 0
-  bool testObjectDetect()
+  bool bb_alarm::testObjectDetect()
   {
       // Enable each Object Detector's internal 38kHz signal,
       for( int x = 0; x < 4; ++x) digitalWrite( odePin[ x], HIGH);
-      // and wait for 8 pulses.  Minimum output rise time is 5 pulses.
+      // and delay for 8 pulses.  An Object detector's
+      // output signal rise time is a minimum of 5 pulses.
       microDelay( 210);
-      // Set each odFlag Bit according to each Object Detector's output state,
+      // Set each odFlag Bit according to its Object Detector's output state,
       for( int x = 0; x < 4; ++x) fbBUT( odFlag[ x], !digitalRead( odPin[ x]));
-      // and wait another 15 pulses.
+      // and wait for another 15 pulses.
       microDelay( 395);
-      // If an odFlag bit is HIGH, then set it again according to the current odPin state.
+      // Then if the Object Detector signal is still HIGH (or HIGH again)
+      // and the odFlag bit had been previously set, then keep it set;
+      // otherwise reset it.
       for( int x = 0; x < 4; ++x) if( fbCHK( odFlag[ x])) fbBUT( ( odFlag[ x]), !digitalRead( odPin[ x]));
       // Disable each Object Detector's internal 38kHz signal.
       for( int x = 0; x < 4; ++x) digitalWrite( odePin[ x], LOW);
-      
+
       // return TRUE if any odFlag bit is HIGH and fbObject is HIGH
       return ( ( rDat1.flagBits & 0x000F0000UL) & fbCHK( fbObject));
+      //return ( ( rDat1.senseBits & 0x0F) & fbCHK( fbObject));
       //if( rDat1.flagBits & 0x000F0000UL) fbSET( fbObject); //  Set Obj Flag if any odFlag bit HIGH
       //    else fbCLR( fbObject);                           //  else Clear Obj Flag
   }
 
-  //  = = = = = = = = = Platform Button Routines  = = = = = = = = = 
-  //  Check each platform button and operate a separate timer for each.
+  //  = = = = = = = = = Platform Button Routines  = = = = = = = = =
+  //  Check platform button and set a separate timer for each one.
   //  If button closure detected, wait 10ms for button to settle.
-  //  -+- See same code for joystick buttons) -+-
+  //  If still pressed, set 1 sec lock-out time to prevent repeats.
+  //  ***  See same code for joystick buttons  ***
   //  This is the second most brilliant code in the program.
-
-  void resetRobotButtons()
-  {
-      for ( int x = 0; x < 4; ++x)
-      {
-          fbCLR( fbRoBut1 + x); // fbRoBut1 given in 'defines.h' as 20
-      }
-  }
+  static uint32_t pButTimer[4];         // separate timers for each button
+  static const uint8_t pButDelay = 20;  // time for contacts to settle
   
-  long pButTimer[4];        // separate timer for each platform button
-  const int pButDelay = 10;  // nominal time for button contacts to settle
-  //  test four platform buttons
-  void checkRobotButtons()
+  bool bb_alarm::testPlatformButton( uint8_t pButNmbr)
   {
-      for( int x = 0; x < 4; ++x)
+      if( digitalRead( rButPin[ pButNmbr]) != 0) // If button pressed...
       {
-          // 1. if button NOT pressed, reset timer and clear a flagBit
-          if( digitalRead( rButPin1 + x) == 0)
+          if( pButTimer[ pButNmbr] < millis())   // AND timer expired...
           {
-              pButTimer[x] = millis() + pButDelay;
-              fbCLR( fbRoBut1 + x); // fbRoBut1 given in 'defines.h' as 20
-          }
-          else
-          {
-              // 2. If button is pressed, check the timer
-              if( pButTimer[x] < millis())
-              {
-              // 3. if timer is expired, then set the flagBit
-                  fbSET( fbRoBut1 + x);
-              }
+              pButTimer[ pButNmbr] = millis() + 1000;  // set 1 sec lock-out timer...
+              return true;                       // and return TRUE.
           }
       }
+      else                                        // If button NOT pressed...
+      {
+          pButTimer[ pButNmbr] = millis() + pButDelay;  // ...reset timer.
+      }
+      // If button NOT pressed OR timer NOT expired then return false
+      return false;
+  }
+
+  //  test four platform buttons
+  void bb_alarm::checkPlatformButtons()
+  {
+      if( testPlatformButton( 0)) fbTOG( fbServo);       // Toggle 'Sweep' routine in 'servo.cpp'
+      if( testPlatformButton( 1)) fbSET( fbProgram);     // Do 'Program' routine in 'control.cpp'
+      if( testPlatformButton( 2)) fbSET( fbPosReset);    // Part of 'getPosition' in 'compass.cpp'
+      if( testPlatformButton( 3)) fbTOG( fbObject);      // Enable flag for 'testObjectDetect' above
   }
   // - - - - - - - - End of Platform Button Routines  - - - - - - - -
 
+  void bb_alarm::printStatus()
+  {
+      printf( "Status = ");
+      if( fbCHK( fbTrack)) printf( "track");
+      else if( fbCHK( fbPivot)) printf( "pivot");
+      else if( fbCHK( fbEvade)) printf( "evade");
+      else if( fbCHK( fbProgram)) printf( "program");
+      else if( fbCHK( fbFault)) printf( "fault");
+      else if( fbCHK( fbManual)) printf( "manual");
+      else if( fbCHK( fbAuto)) printf( "auto");
+      printf( "\r\n");
+  }
   
 #endif  //  End of #ifdef __AVR_ATmega2560__

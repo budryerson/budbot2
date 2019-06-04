@@ -26,10 +26,11 @@
  */
 
 #include <Arduino.h>
-#include <nRF24L01.h>     // These are in the RF24 Library in
-#include <RF24.h>         // the Aruino IDE Libraries folder
+#include <nRF24L01.h>     // These files are in the 'RF24' Library
+#include <RF24.h>         // in the 'D:\IDE\arduino\libraries' folder.
 #include <RF24_config.h>
-//  SPI library initialized in the two main programs
+//  The SPI library is initialized in each of the two
+//  main programs 'bb2_bot.ino' and 'bb2_joy.ino'.
 #include <bb_defines.h>
 #include <bb_shared.h>
 #include <bb_routines.h>
@@ -47,7 +48,7 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
 #define JOYSTICK 0    //  numeric values to identify 'myDevice'
 #define PLATFORM 1
 
-#if( RADIO_DEBUG)    //  RADIO_DEBUG is set in 'defines.h'
+//#if( RADIO_DEBUG)    //  RADIO_DEBUG is set in 'defines.h'
   void printRadioInfo( int myDevice, RF24* myRadio)
   {
       //  Print the name of the Device chosen
@@ -59,7 +60,7 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
       // Print the configuration of the nRF24L01+ module
       (*myRadio).printDetails();
   }
-#endif
+//#endif
 
 //  = = = = = = = =  Joystick Radio Routines  = = = = = = = = =
 //  - - - - - - -  Do NOT compile for Mega2560  - - - - - - - -
@@ -68,6 +69,7 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
   void bb_radio::setupJoystickRadio()
   {
       radio.begin();
+      radio.maskIRQ( 1, 1, 0);   // Mask all interrupts except 'payload received'
       radio.setAutoAck( true);   // Enable auto-acknowledge packets (default).
       radio.enableAckPayload();  // Enable custom payloads on acknowledge packets.
       radio.enableDynamicPayloads();  // Enable dynamic payloads on ALL pipes.
@@ -75,13 +77,18 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
                                   // Range: 0 to 15 max; 0 = 250us; 15 = 4000us.
                                   // Set number of retries before giving up.
                                   // Range: 0 to 15 max
-      radio.setPALevel( 0);       // Set nRF24L01 TX power to minimum: -18dBm
-      //  radio.setPALevel( 3);       // Set transmitter power to maximum:   0dBm
+      // radio.setPALevel( 0);       // Set nRF24L01 TX power to minimum: -18dBm
+      radio.setPALevel( 3);       // Set Power Amplifier output to one of four levels
+                                  // RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH and RF24_PA_MAX,
+                                  // corresponding to NRF24L01 output levels:
+                                  // -18dBm, -12dBm,-6dBM, and 0dBm
+                                  // If the value is more than 3, set level to MAX
+                                  // (The NRF24L01+ has a 10db power amp)
       radio.openReadingPipe( 1, pipe0);
 
       // Fill the TX FIFO buffers with jDat structure to send as ACK
-      radio.writeAckPayload( 1, &jDat, sizeof( jDat));
-      radio.writeAckPayload( 1, &jDat, sizeof( jDat));
+      //radio.writeAckPayload( 1, &jDat, sizeof( jDat));
+      //radio.writeAckPayload( 1, &jDat, sizeof( jDat));
 
       radio.startListening();      // Start listening
 
@@ -90,74 +97,47 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
       #endif
   }
 
-  //  If radio ready, read RX buffer into rDat1, send jDat as ACK.
-  //  Then wait up to 0.5 second for radio ready again for rDat2.
-  //  If rDat1 ID correct, set radio flag true, otherwise
-  //  swap data structures and set radio flag false.
+  //  Radio ready, so set jDat as ACK and read radio into RX buffer.
+  //  If rDat1 ID NOT correct, reset radio flag and start over;
+  //  otherwise set radio1 flag and wait for next radio RX.
+  //  If rDat2 ID correct, set radio2 flag true and check sync
   //  Radio buffer structures (rBuf) are declared in 'shared.h'
   //
   void bb_radio::joystickRadioAck()
   {
-      static uint32_t raTimer;    // radio available timer
-      jDat.radio = false;
-      // If Radio has received first packet and sent FIFO buffer as ACK.
-      if( radio.available())
-      {
-          memset( &rBuf1, 0, sizeof( rBuf1));     // Clear the radio buffers
-          memset( &rBuf2, 0, sizeof( rBuf2));
-          radio.read( &rBuf1, sizeof( rBuf1));    // Read received data
+      //static uint32_t jrTimer;         // joystick radio timer
+      //jrTimer = millis();              // save current time
 
-          raTimer = millis() + 500;        // Set timer to 0.5 seconds
-          while( !radio.available()        // If radio RX takes too long,
-            && ( millis() < raTimer));     // break out of 'while' loop
-          radio.read( &rBuf2, sizeof( rBuf2));    // Read received data
-          // If the low order system time bytes are the same
-          if( rBuf1.loTime == rBuf2.loTime)
+      jDat.radio1 = false;             // reset rDat1 packet radio flag
+      jDat.radio2 = false;             // reset rDat2 packet radio flag
+      radio.writeAckPayload( 1, &jDat, sizeof( jDat));  // fill ACK buffer
+      radio.read( &rBuff, sizeof( rBuff));    // Fill radio read buffer
+                                              // and flush ACK FIFO
+      if( rBuff.mpxID == RDAT1_ID)     // if rDat1 received
+      {
+          jDat.radio1 = true;                        // set rDat1 radio flag
+          memcpy( &rDat1, &rBuff, sizeof( rBuff));   // copy buffer to rDat1
+          radio.writeAckPayload( 1, &jDat, sizeof( jDat));  // fill ACK buffer
+          while( !radio.available());                // wait for next radio packet
+          radio.read( &rBuff, sizeof( rBuff));    // Fill radio read buffer
+                                                  // and flush ACK FIFO
+          if( rBuff.mpxID == RDAT2_ID)    // if rDat2 received
           {
-              jDat.radio = true;
-              jDat.sync = true;
-              if( rBuf1.mpxID == rDat1ID)
-              {
-                   memcpy( &rDat1, &rBuf1, sizeof( rBuf1));
-                   memcpy( &rDat2, &rBuf2, sizeof( rBuf2));
-              }
-              else   /// Swap the buffers
-              {
-                   memcpy( &rDat2, &rBuf1, sizeof( rBuf1));
-                   memcpy( &rDat1, &rBuf2, sizeof( rBuf2));
-              }
+              jDat.radio2 = true;                        // set rDat2 radio flag
+              memcpy( &rDat2, &rBuff, sizeof( rBuff));   // copy buffer to rDat2
           }
+          // set sync flag to whether two rDat packets are received in correct order
+          jDat.sync = ( ( rDat1.loTime == rDat2.loTime) && jDat.radio1 && jDat.radio2);
       }
-      // Flush and refill first two radio TX FIFO buffers
-      uint8_t flush = radio.flush_tx();
-      radio.writeAckPayload( 1, &jDat, sizeof( jDat));
-      radio.writeAckPayload( 1, &jDat, sizeof( jDat));
+      else
+      {
+          // If first data from radio is not rDat1, then radio is out of sync.
+          // Flush the ACK buffer and return to call conditional in Main Loop.
+          radio.flush_tx();
+      }
+      //jDat.loopTime = (uint16_t)( millis() - jrTimer); // measure radio loop time
+      //jDat.radioIRQ = false;  //  Reseting the radio flag for another IRQ is the last thing to do.
   }
-
-/*    radio.startWrite( &jDat, sizeof( jDat), 0);        // write jDat packet with ACK
-      radio.whatHappened( jtx_ok, jtx_fail, jrx_ready);  // test result
-      if( jtx_ok)
-      {
-        jDat.radio = true;
-        joyRadioRead();
-        // Use write instead of startWrite to wait for built-in retry feature
-        if( radio.write( &jDat, sizeof( jDat)))
-        {
-          jDat.radio2 = true;
-          joyRadioRead();
-          jDat.sync = ( rDat1.loTime == rDat2.bcLo);
-        }
-      }  */
-
-/*    // Subroutine to Read an ACK packet into RX buffer, then sort
-      // buffer into proper rDat structures according to mpxID.
-      void joyRadioRead()
-      {
-          static uint8_t jBuf[ 32];              // One-time declaration of 32 byte RX buffer
-          radio.read( &jBuf, sizeof( jBuf));     // read ACK packet back from radio write
-          if( jBuf[31] == rDat1ID) memcpy( &rDat1, &jBuf, sizeof( jBuf));
-            else if( jBuf[31] == rDat2ID) memcpy( &rDat2, &jBuf, sizeof( jBuf));
-      }  */
 
 #endif
 // - - - - - -  End of Joystick Radio Routines  - - - - - -
@@ -177,7 +157,7 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
                                  // Set number of retries from 0 to 15 max before giving up.
       //radio.setPALevel( 0);      // Set radio TX power to minimum: -18dBm plus
                                  // New 20dB power amp yields +2dBm total TX output
-      radio.setPALevel( 1);      // Set radio TX Power Amp Level to +8dBm
+      radio.setPALevel( 3);      // Set radio TX Power Amp Level to maximum: +8dBm
       radio.openWritingPipe( pipe0);
 
 //      #if( RADIO_DEBUG)
@@ -185,37 +165,36 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
 //      #endif
   }
 
-  //  Send two rDat data packets from the Platform to the Joystick
-  //  and return two jDat data packets as acknowledgments.
-  //  Do not alter current jDat structure unless RX is successful.
+  //  Send two rDat packets to the Joystick from the Platform
+  //  and return the jDat packet as acknowledgments each time.
+  //  Do not alter current jDat values unless 'read' is valid.
   void bb_radio::platformRadioAck()
   {
       // code to measure the amount of time for radio routine to execute
-      //   static uint32_t tempTime;
-      //   tempTime = millis();
+      static uint32_t prTimer;    // platform radio timer
+      prTimer = millis();
 
-      static uint32_t raTimer;    // radio available timer
       // Pass through if Joystick radio not working
-      if( radio.write( &rDat1, sizeof( rDat1)))
+      if( radio.write( &rDat1, sizeof( rDat1)))   // Test whether first TX/ACK completes, then...
       {
-          memset( &rBuf1, 0, sizeof( rBuf1));     // Clear the radio buffers
-          memset( &rBuf2, 0, sizeof( rBuf2));
-          radio.read( &rBuf1, sizeof( rBuf1));    // Read received ACK data
-
-          raTimer = millis() + 500;               // Set timer to 0.5 seconds
-          while( !radio.write( &rDat2, sizeof( rDat2))   // If 'write' takes too long,
-            && ( millis() < raTimer));                   // break out of 'while' loop
-          radio.read( &rBuf2, sizeof( rBuf2));           // Read received data          
-
-          // Check for valid second packet of joystick data
-          if( ( rBuf2.mpxID == jDatID) && ( rBuf2.blank == 0))
+          fbSET( fbRadio);                        // set the rDat radio flag (true), and...
+          if( radio.isAckPayloadAvailable())      // if there is something in the RX buffer...
           {
-              fbSET( fbRadio);                        // set the rDat radio flag,
-              memcpy( &jDat, &rBuf2, sizeof( rBuf2)); // save rBuf2 as jDat
+              radio.read( &rBuff, sizeof( jDat)); // then fill rBuf with ACK from RX buffer...
+              if( rBuff.mpxID == JDAT_ID)                  // and if data is valid...
+                  memcpy( &jDat, &rBuff, sizeof( rBuff));  // then copy rBuf to jDat.
           }
-          else fbCLR( fbRadio);      // clear Radio flag (false)
+          radio.write( &rDat2, sizeof( rDat2));   // Now, assume that radio link is okay and
+          if( radio.isAckPayloadAvailable())      // that second TX/ACK will also complete, so...
+          {
+              radio.read( &rBuff, sizeof( jDat));  // again fill rBuf from RX FIFO buffer...
+              if( rBuff.mpxID == JDAT_ID)                  // and if data is valid...
+                  memcpy( &jDat, &rBuff, sizeof( rBuff));  // then copy rBuf to jDat.
+          }
       }
-      //  rDat2.radioTime = (uint8_t)( millis() - tempTime);
+      else fbCLR( fbRadio);            // clear Radio flag (false)
+
+      rDat2.radioTime = (uint8_t)( millis() - prTimer);  // time to complete TX routine
   }
 
 #endif

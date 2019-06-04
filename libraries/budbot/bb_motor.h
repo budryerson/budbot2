@@ -19,9 +19,9 @@ class bb_motor {
         bb_motor();
         ~bb_motor();
         void stop();
-        void setup();
+        void motorSetup();
         void control();
-        void reset();
+        void motorReset();
         void motorTest();
         void readMotorCurrent();
         void printData();

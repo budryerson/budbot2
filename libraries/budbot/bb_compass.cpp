@@ -1,7 +1,7 @@
 /* File Name: bb_compass.cpp
  * First Day: 30NOV2015
  * Developer: Bud Ryerson
- * Described: This is code for the HMC5883 magnetometer/digital compass
+ * Described: This is code for the Adafruit BNO055 9Axis IMU shield
  *            It will use the two wire I2C protocol to communicate.
  * Last Work: to work with the HMC58X3 libraries
        5DEC15 - use calibration and getOffset routines to determine bias
@@ -49,45 +49,71 @@ bb_compass::~bb_compass(){}
 // ==============================   IMU Initialization   =============================
 void bb_compass::setupIMU()
 {
-    bbImu.initSensor();           // The I2C Address can be changed here inside this function in the library
-    bbImu.remapAxisPosition();    // Correct for IMU platform orientation: swap X/Y Axises and set X negative
-    bbImu.setOperationMode( OPERATION_MODE_NDOF);   // Can be configured to other operation modes as desired
+    bbImu.initSensor();           // The I2C Address can be changed with this function's parameter.
+    bbImu.remapAxisPosition();    // Correct for IMU platform orientation:
+                                  // swap X/Y Axis and set X negative
+    bbImu.setOperationMode( OPERATION_MODE_NDOF);   // Can be configured to other modes as desired
     bbImu.setUpdateMode( MANUAL);	// Default is AUTO. Setting to MANUAL requires fewer reads
                                   // to the sensor, but requires calling the relevant update
                                   // function prior to calling the read function.
     bbImu.updateAccelConfig();
+    bbImu.disableAnyMotion();
+    bbImu.disableSlowNoMotion();
 }
 
 void bb_compass::testIMU()
 {
-    #if( IMU_DEBUG)          //  If in IMU Debug mode
+//    #if( IMU_DEBUG)          //  If in IMU Debug mode
       bbImu.updateAccelConfig();
 
-      printf("\r\nDefault accelerometer configuration settings...\r\n");
+      printf("IMU accelerometer default settings...\r\n");
       printf("Range: %i\r\n", bbImu.readAccelRange());           // byte: 0 - 3
       printf("Bandwidth: %i\r\n", bbImu.readAccelBandwidth());   // byte 0 - 7
       printf("Power Mode: %i\r\n", bbImu.readAccelPowerMode());  // byte: 0 -5
 
-      printf("Streaming in ...\r\n");	// Countdown
+      printf("IMU streaming data in ");	// Countdown
       printf("3...");
-      delay(500);	        // Wait for half a second
+      delay(1000);	       // Wait for a second
       printf("2...");
-      delay(500);         // Wait for half a second
-      printf("1...");
-      delay(500);        	// Wait for half a second
-    #endif
+      delay(1000);         // Wait for a second
+      printf("1...\r\n");
+      delay(1000);         // Wait for a second
+//    #endif
 }
 // - - - - - - - - - - - - -   End IMU Initialization  - - - - - - - - - - - - - - - -
 
-//  In Manual mode, IMU data requires update before read.
+// Update the BNO055 Calibration Status
+// Return an unsigned byte for each of the four calibration registers
+// The value will be between 0 (uncalibrated) and 3 (fully calibrated).
+// When running in NDOF mode, any data where the system calibration
+// value is '0' should generally be ignored.
+void bb_compass::getImuCalStatus()
+{
+    bbImu.updateCalibStatus();     
+    imuDat.AccCalStat  = bbImu.readAccelCalibStatus();
+    imuDat.GyroCalStat = bbImu.readGyroCalibStatus();
+    imuDat.MagCalStat  = bbImu.readMagCalibStatus();
+    imuDat.SysCalStat  = bbImu.readSystemCalibStatus();
+  //  printImuCalStatus();
+}
+
+void bb_compass::printImuCalStatus()
+{
+    printf("IMU calibration status...\r\n");
+    printf("Acc:%1u ", imuDat.AccCalStat);     // Accelerometer Calibration Status (0 - 3)
+    printf("Gyro:%1u ", imuDat.GyroCalStat);   // Magnetometer Calibration Status (0 - 3)
+    printf("Mag:%1u ", imuDat.MagCalStat);     // Gyroscope Calibration Status (0 - 3)
+	  printf("System:%1u", imuDat.SysCalStat);   // System Calibration Status (0 - 3)
+    printf("\r\n");
+}
+
+// In Manual mode, IMU data requires update before read.
+// In NDOF mode, when the system calibration status is '0'
+// any data should generally be ignored. 
 void bb_compass::getImuValues()
 {
-    bbImu.updateCalibStatus();                          // Update the Calibration Status
-    imuDat.AccCalStat = bbImu.readAccelCalibStatus();   // Return uint8_t of Calibration Status: 0 - 3
-    imuDat.GyroCalStat = bbImu.readGyroCalibStatus();
-    imuDat.MagCalStat = bbImu.readMagCalibStatus();
-    imuDat.SysCalStat = bbImu.readSystemCalibStatus();
-
+    //getImuCalStatus();
+/*
     bbImu.updateAccel();                 // Update Accelerometer XYZ data
     imuDat.Acc.vX = bbImu.readAccelX();  // Return float of pure accelerometer
     imuDat.Acc.vY = bbImu.readAccelY();  // data (motion + gravity) in m/s2
@@ -108,7 +134,7 @@ void bb_compass::getImuValues()
     imuDat.Quat.vX = bbImu.readQuatX();  // times 1000 for 3 decimal place accuracy.
     imuDat.Quat.vY = bbImu.readQuatY();
     imuDat.Quat.vZ = bbImu.readQuatZ();
-
+*/
     bbImu.updateEuler();                          // Update Euler Angle data.
     imuDat.Euler.Head = bbImu.readEulerHeading(); // Return float of Euler Angle data
     imuDat.Euler.Roll = bbImu.readEulerRoll();    // in degrees from 0 to ±180, where + is
@@ -118,11 +144,33 @@ void bb_compass::getImuValues()
     imuDat.LinAcc.vX = bbImu.readLinearAccelX();  // Return float of accelerometer data
     imuDat.LinAcc.vY = bbImu.readLinearAccelY();  // without the gravity vector in m/s2.
     imuDat.LinAcc.vZ = bbImu.readLinearAccelZ();
-
+/*
     bbImu.updateGravAccel();                      // Update Gravity Acceleration data.
     imuDat.GravAcc.vX = bbImu.readGravAccelX();   // Return float of accelerometer data
     imuDat.GravAcc.vY = bbImu.readGravAccelY();   // with only the gravity vector in m/s2.
     imuDat.GravAcc.vZ = bbImu.readGravAccelZ();
+*/
+    //  Save integer value of Euler Heading as 'rDat1.head'
+    rDat1.head  =  floatToInt( imuDat.Euler.Head);  // integer of Euler Angle heading
+    if( rDat1.head > 359) rDat1.head = 0;           // display 360 degrees as 0 degrees
+    
+    //  If acceleration exceeds a threshold (0.04 meter/sec/sec)...
+    if( abs(imuDat.LinAcc.vX) > 0.04)
+    {
+      //  multiply by 100 to get centimeters/sec/sec and...
+      rDat2.imAccX = floatToInt( imuDat.LinAcc.vX * 100); // cm/s/s
+      //  multiply by 10 for meters and by 0.05 second loop time.
+      //  Or because 10 x 0.05 = .5, simply divide by 2 to get meters/second
+      rDat2.imSpdX += intDiv( rDat2.imAccX, 2);   // meters/second
+    }
+    else rDat2.imAccX = 0;
+
+    if( abs(imuDat.LinAcc.vY) > 0.04)
+    {
+      rDat2.imAccY = floatToInt( imuDat.LinAcc.vY * 100);
+      rDat2.imSpdY += intDiv( rDat2.imAccY, 2);
+    }
+    else rDat2.imAccY = 0;
 
     //  printImuValues();  // as needed for testing
 }
@@ -135,9 +183,9 @@ void bb_compass::printImuValues()
   #if( !PID_CALIBRATE)  // --------  DO NOT COMPILE IF ADJUSTING PID  ---------
 
 /*    printf( "Euler Angle:");
-    printf( " %4i°H", (int)( imuDat.Euler.Head));    // Accelerometer X-Axis data
-    printf( " %4i°R", (int)( imuDat.Euler.Roll));    // Accelerometer X-Axis data
-    printf( " %4i°P", (int)( imuDat.Euler.Pitch));   // Accelerometer X-Axis data
+    printf( " %4i°H", (int)( imuDat.Euler.Head));
+    printf( " %4i°R", (int)( imuDat.Euler.Roll));
+    printf( " %4i°P", (int)( imuDat.Euler.Pitch));
     printf(" | ");
 */
     printf( "Linear Acc:");
@@ -167,14 +215,14 @@ void bb_compass::printImuValues()
     printf( " %4i | ", rDat1.motorSpeedLeft);
     printf( "IntCntLft: ");
     printf( " %3u | ", rDat1.intCountL);
-    printf( "drDist: ");
-    printf( " %3i | ", rDat2.drDist);
+//    printf( "drDist: ");
+//    printf( " %3i | ", rDat2.drDist);
     printf( " | drPosX: ");
-    printf( " %3i | ", rDat2.drPosX);
+    printf( " %3i | ", imuDat.drPosX);
     printf( " | drPosY: ");
-    printf( " %3i | ", rDat2.drPosY);
+    printf( " %3i | ", imuDat.drPosY);
 */
-    printf( " | imSpdX: ");
+    printf( " | imSpdX: ");                   // IMU speed in meters/second
     printf( " %3i | ", rDat2.imSpdX);
     printf( " | imSpdY: ");
     printf( " %3i | ", rDat2.imSpdY);
@@ -183,14 +231,33 @@ void bb_compass::printImuValues()
     #endif    // ---------  End of DO NOT COMPILE IF ADJUSTING PID   -------
 }
 
+void bb_compass::printDeadReckValues()
+{
+    printf( "Compass: ");
+    printf( "enc% 7luL % 7luR", eDatL.epc, eDatR.epc);        //  total Left encoder click count
+    printf(" | ");
+    printf("dist");
+    printFloat( drDist, 2);   // dead reckoning distance in millimeters
+    printf(" | ");
+    printf( "head% 4i", rDat1.head);  // heading in degrees 0 - 359
+    printf(" | ");
+    printf( "delta% 5iX % 5iY ", deltaPosX, deltaPosY);      // change in position in mm
+    printf(" | ");
+    printf( "pos% 5iX % 5iY", imuDat.drPosX, imuDat.drPosY);   // dead reckoning position in mm
+    printf( "\r\n");
+}
+
+/*  Moved Dead Reckoning navigation math to the PC - 16MAR2019
+
 //  =======  Find new  X & Y Position by Dead Reckoning ======
 //  Find new distance using odometry from wheel encoders data
 //  Plot XY position using 'heading' angle
 //  30JUN16 - Bud Ryerson
 //  29JUN17 - update and rework
+//  16MAR19 - Why do navigation on platform?
+*/
 void bb_compass::getPosition()
 {
-
     static int clkL;       // wheel encoder clicks
     static int clkR;
     clkL = rDat1.intCountL; // wheel encoder clicks
@@ -217,33 +284,41 @@ void bb_compass::getPosition()
       //
       //drDist = ( clkL + clkR) / 3.46; // old calculation - why?
       drDist = ( clkL + clkR) * 0.285;
-      // Get heading in radians
-      static float radHead;
-      radHead = imuDat.Euler.Head / bb_180ByPi;
-      // Use trigonometry to get XY components of distance traveled.
-      //   sin a * hypotenuse = opposite
-      //   cos a * hypotenuse = adjacent
-      deltaPosX = floatToInt( sin( radHead) * drDist);
+      // direction platform is traveling (heading) in radians
+      radHead = imuDat.Euler.Head / 57.2957795;  // 180/Pi
+      // Use trig to roughly get the X and Y components of the dead
+      // reckoning distance traveled from the angle of the heading.
+      //   sin( angle) * hypotenuse = opposite
+      //   cos( angle) * hypotenuse = adjacent
+      deltaPosX = floatToInt( sin( radHead) * drDist);  // in millimeters?
       deltaPosY = floatToInt( cos( radHead) * drDist);
     }
 
     if( fbCHK( fbPosReset))  // Robot repositioned to origin point
     {
-        rDat2.drPosX = 0;    // clear current position
-        rDat2.drPosY = 0;
-        rDat2.drSpdX = 0;    // clear speed
-        rDat2.drSpdY = 0;
-        fbCLR( fbPosReset);  // clear flag
+        setupIMU();          // reinitialize IMU module
+        imuDat.drPosX = 0;    // clear dead reckoning
+        imuDat.drPosY = 0;    // position
+        imuDat.drSpdX = 0;    // and speed
+        imuDat.drSpdY = 0;
+        rDat2.imAccX = 0;    // clear IMU
+        rDat2.imAccY = 0;    // acceleration
+        rDat2.imSpdX = 0;    // and speed
+        rDat2.imSpdY = 0;
+        fbCLR( fbPosReset);  // clear Position Reset flag
     }
     else
     {
-      // Find new dead reckoning (dr) distance from the point of origin.
-      rDat2.drPosX += deltaPosX;
-      rDat2.drPosY += deltaPosY;
+      // Find new dead reckoning (dr) distance from point
+      // of origin ( 0, 0) in millimeters plus or minus.
+      // Map of room is -2250 millimeters (West) to 2250 mm (East),
+      // and -3350 millimeters (South) to 3350 mm (North).
+      imuDat.drPosX += deltaPosX;
+      imuDat.drPosY += deltaPosY;
 
-      // And multiply by 20 to get speed in mm/sec
-      rDat2.drSpdX = deltaPosX * 20;    //  mm/sec
-      rDat2.drSpdY = deltaPosY * 20;    //  mm/sec
+      // And multiply by 20 to get plus or minus speed in mm/sec
+      imuDat.drSpdX = deltaPosX * 20;    //  mm/sec
+      imuDat.drSpdY = deltaPosY * 20;    //  mm/sec
     }
 
     // IMU Data
@@ -254,6 +329,7 @@ void bb_compass::getPosition()
     // | f = v + ( a * t)                                                     |
     // | f = final velocity, v = initial velocity, a = acceleration, t = time |
     // ------------------------------------------------------------------------
+    // Is this a good idea?  It does not account for skidding
     if( drDist == 0)         // if robot is spinning or not moving
     {
         rDat2.imAccX = 0;    // clear the acceleration
@@ -263,15 +339,16 @@ void bb_compass::getPosition()
     }
     else
     {
-        //  if acceleration exceeds 4mm/s/sand increment speed in meters/sec
+        //  If acceleration exceeds a threshold (0.04 meter/sec/sec),
+        //  then increment speed.
         if( abs(imuDat.LinAcc.vX) < 0.04) rDat2.imAccX = 0;
         else
         {
           //  multiply by 100 to get centimeters/sec/sec and
-          rDat2.imAccX = floatToInt( imuDat.LinAcc.vX * 100);
-          //  multiply by 10 for meters and by 0.05 millisecond loop time
-          //  (10 x 0.05 = .5) or simply divide by 2 to get meters/second
-          rDat2.imSpdX += intDiv( rDat2.imAccX, 2);   // m/s
+          rDat2.imAccX = floatToInt( imuDat.LinAcc.vX * 100); // cm/s/s
+          //  multiply by 10 for meters and by 0.05 second loop time
+          //  Or because 10 x 0.05 = .5, simply divide by 2 to get meters/second
+          rDat2.imSpdX += intDiv( rDat2.imAccX, 2);   // meters/second
         }
         if( abs(imuDat.LinAcc.vY) < 0.04) rDat2.imAccY = 0;
         else
@@ -286,22 +363,7 @@ void bb_compass::getPosition()
 
     //printDeadReckValues();
 }
-
-void bb_compass::printDeadReckValues()
-{
-    printf( "Compass: ");
-    printf( "enc% 7luL % 7luR", eDatL.epc, eDatR.epc);        //  total Left encoder click count
-    printf(" | ");
-    printf("dist");
-    printFloat( drDist, 2);   // dead reckoning distance in millimeters
-    printf(" | ");
-    printf( "head% 4i", rDat1.head);  // heading in degrees 0 - 359
-    printf(" | ");
-    printf( "delta% 5iX % 5iY ", deltaPosX, deltaPosY);      // change in position in mm
-    printf(" | ");
-    printf( "pos% 5iX % 5iY", rDat2.drPosX, rDat2.drPosY);   // dead reckoning position in mm
-    printf( "\r\n");
-}
+// - - - - -   End of Navigation calculations   - - - -  //
 
 //  - - - - - - - - -  End of DEAD RECKONING  - - - - - - - - -
 

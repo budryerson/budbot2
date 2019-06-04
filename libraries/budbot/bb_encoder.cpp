@@ -30,6 +30,9 @@
         The same mSpd values produce different motor speeds
         due to differences over time in the applied voltage
         and mechanical differences in the motors themselves.
+        
+        clicks per T3 (50ms) * 20 = clicks/sec * 60 = clicks/min
+        clicks per min / 166.66 = wheel rpm
 */
 /*  The Dual Modes of velocity measurement:
     1) Counter - Measure number of  pulses at fast speed
@@ -47,8 +50,9 @@ bb_encoder::bb_encoder(){}     //  Class constructor defined
 bb_encoder::~bb_encoder(){}    //  Class destructor defined
 
 //  = = = =  Encoder Interrupt Service Routines (ISRs)  = = = =
-//    Fill Right and Left buffer rings with eight pulse duration values
-//    Use pulseAverage() to total and divide by eight to find average
+//  Encoders count up whether wheels are turning backwards or forwards.
+//  Pulse counter values (epc) never reset. At full speed (272/sec), 
+//  unsigned long integers can hold about 180 days of counts.
 //  = = = = = = = = =  ISR for Left encoder   = = = = = = = = =
 void eiSR_L()
 {
@@ -59,8 +63,8 @@ void eiSR_L()
 //  = = = = = = = = =  ISR for Right encoder  = = = = = = = = =
 void eiSR_R()
 {
-    eDatR.epti = micros();  //  get time of interrupt
-    ++eDatR.epc;            // increment Left encoder pulse count.
+    eDatR.epti = micros();  // mark the time of the interrupt
+    ++eDatR.epc;            // increment Right encoder pulse count.
     eDatR.epf = true;       // set Right motor turning flag
 }
 
@@ -72,18 +76,20 @@ void bb_encoder::encoderSetup()
     //  3 = pin 20,
     //  4 = pin 19,
     //  5 = pin 18
-    attachInterrupt( 1, eiSR_R, CHANGE);  // trigger int_1 on RF Motor Int state change
     attachInterrupt( 0, eiSR_L, CHANGE);  // trigger int_0 on LF Motor Int state change
+    attachInterrupt( 1, eiSR_R, CHANGE);  // trigger int_1 on RF Motor Int state change
 
     //  Timer 3 is set to interrupt every 50 milliseconds in 'routines.cpp'
 
-    // initialize all cells of both encoder interrupt pulse smoothing arrays
-    memset( &eDatR, 0, sizeof( eDatR));     //  clear Right encoder data structure
+    // initialize all values of both encoder structures
     memset( &eDatL, 0, sizeof( eDatL));     //  clear Left  encoder data structure
+    memset( &eDatR, 0, sizeof( eDatR));     //  clear Right encoder data structure
 }
 
-//  Subtract the saved from the immediate time and divide by the number
-//  of pulses to get average pulse time for the Right and Left encoders.
+//  Subtract the saved time (epts) of the last interrupt of the prior sequence
+//  from the immediate time (epti) of the last interrupt of the current sequence
+//  and divide by the number of interrupts since the last call of this routine
+//  to get an average pulse duration time for both the Left and Right encoders.
 //  eDatR & eDatL are Encoder Data Structures.  See "shared.h".
 void bb_encoder::pulseAverage()
 {
@@ -93,8 +99,8 @@ void bb_encoder::pulseAverage()
         rDat1.intCountL = (byte)( eDatL.epc - eDatL.eps);
         //  calculate the average time value in microseconds per interrupt
         eDatL.epv = longDiv( ( eDatL.epti - eDatL.epts), rDat1.intCountL);
-        eDatL.epts = eDatL.epti;   // encoder pulse time saved (epts) from immediate time (epti)
-        eDatL.eps = eDatL.epc;     // encoder pulse saved (eps) from current pulse count (epc)
+        eDatL.epts = eDatL.epti;   // save the micros() time of the last interrupt
+        eDatL.eps = eDatL.epc;     // save the number of interrupts
         eDatL.epf = false;         // reset encoder pulse flag (epf)
     }
     else

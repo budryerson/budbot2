@@ -62,8 +62,8 @@
 #include <bb_compass.h>
 #include <bb_motor.h>    //  Declarations for this library
 
-#include <bb_encoder.h>
-bb_encoder bbEncoder;    // instantiate the two Encoder ISRs and routines
+//#include <bb_encoder.h>
+//bb_encoder bbEncoder;    // instantiate the two Encoder ISRs and routines
 #include <bb_pid.h>
 bb_pid bbPidMR, bbPidML; // instantiate two separate PID controllers
                          // one for Right and another for Left Motors
@@ -86,7 +86,7 @@ void bb_motor::stop()
 //    fbCLR( fbMotor);
 }
 
-void bb_motor::setup()
+void bb_motor::motorSetup()
 {
     for( int x = 0; x < 4; x++)   //  set motor direction, speed and current pins
     {
@@ -99,7 +99,8 @@ void bb_motor::setup()
     memset( &motDatR, 0, sizeof( motDatR));   //  clear motor data structures
     memset( &motDatL, 0, sizeof( motDatL));
 
-    bbEncoder.encoderSetup();   //  setup the Encoders in "bb_encoder.h" file
+    // moved to main program loop
+    //bbEncoder.encoderSetup();   //  setup the Encoders in "bb_encoder.h" file
 
     //  Set parameters for the PID Controller
     //  Kp, Ki, Kd, Min & Max inPut, Min & Max outPut
@@ -125,25 +126,31 @@ int motorSpeedCalculate( struct motStruct* mDat, bb_pid* mPid)
 //    (*mDat).epCalc = (*mPid).outPut_f;              //  save in mDat as "encoder pulse calculated"
 //    (*mDat).mSpdTarget = (int)(*mPid).outPut;
 
-    if( (*mPid).setPoint <= 0) (*mDat).mSpdTarget = 0;  //  Clamp the outPut if setPoint is zero
-    else (*mDat).mSpdTarget = (*mPid).outPut;                //  set target speed as integer value
-    intConstrain( (*mDat).mSpdTarget, 0, 255);          //  and constrain
+    if( (*mPid).setPoint <= 0)   // If the setPoint is zero or less...
+    {
+        (*mDat).mSpdTarget = 0;  // clamp the target speed.
+    }
+    else                         // Otherwise set target speed
+    {                            // to the constrained PID output
+        (*mDat).mSpdTarget = intConstrain( (*mPid).outPut, 0, 255);
+    }
     (*mDat).mDir = !( (*mDat).mSpd < 0);  //  Motor direction TRUE (Forward) if mSpd not less than zero
-    intConstrain( (*mDat).mSpd, -255, 255);
+    (*mDat).mSpd = intConstrain( (*mDat).mSpd, -255, 255);
     return (*mDat).mSpd;
 }
 
 void bb_motor::control()
 {
     //  modify motor velocity value with rotational value
-    motDatR.mSpd = rDat1.velocity - rDat1.rotation;
+    motDatR.mSpd = rDat3.velocity - rDat3.rotation;
     //  NOTICE!! This is a plus +!
-    motDatL.mSpd = rDat1.velocity + rDat1.rotation;
-    
-    bbEncoder.pulseAverage();  //  find average of last eight pulse durations for both encoders
-                               //  save encoder counts in rDat1 structure as "intCount"
-    motDatR.epv = eDatR.epv;   //  store those encoder pulse averages in the motor data structure
-    motDatL.epv = eDatL.epv;
+    motDatL.mSpd = rDat3.velocity + rDat3.rotation;
+
+    //  Encoder pulse averages are determined in the main loop and saved in the
+    //  two eDat structures as soon as possible after the T3 interrupt.
+    //  Raw counts are saved in the rDat1 structure as "intCountL" & "R".
+    motDatR.epv = eDatR.epv;   //  move encoder pulse averages
+    motDatL.epv = eDatL.epv;   //  to the motor data structure
 
     bbPidMR.setControlMode( fbCHK( fbMotor));  // set Right PID control OFF if Motor flagBit is OFF
     rDat1.motorSpeedRight = motorSpeedCalculate( &motDatR, &bbPidMR);
@@ -154,7 +161,7 @@ void bb_motor::control()
     bbPidMR.serialRX();
     bbPidMR.serialTX();
 #endif
- 
+
     bbPidML.setControlMode( fbCHK( fbMotor));    // set Left PID control OFF if Motor flagBit is OFF
     rDat1.motorSpeedLeft =  motorSpeedCalculate( &motDatL, &bbPidML);
 #if( PID_MOTOR_LEFT_CALIBRATE)
@@ -178,7 +185,7 @@ void bb_motor::control()
         analogWrite( LRMSpin, motDatL.mSpdTarget);    // set Left Rear
     }
     else             //  otherwise stop the motors
-    { 
+    {
         for (int x = 0; x < 4; ++x)
         {
             digitalWrite( MDpin[ x], 1);  // set all direction pins to 1 (forward)
@@ -189,17 +196,17 @@ void bb_motor::control()
 //    printData();
 }
 
-void bb_motor::reset()
+void bb_motor::motorReset()
 {
-    rDat1.velocity = 0;
-    rDat1.rotation = 0;
+    rDat3.velocity = 0;
+    rDat3.rotation = 0;
     //isMotorOn = false;   //  set Motor Run mode to OFF
     fbCLR( fbMotor);     //  clear the motorOn flagBit
 }
 
 void bb_motor::motorTest()
 {
-    reset();                           //  set all motors to forward at zero
+    motorReset();                           //  set all motors to forward at zero
     for (int x = 0; x < 4; ++x)        //  set all motor PWM pins to forward at zero
     {
         digitalWrite( MDpin[ x], 1);  // set all direction pins to 1 (forward)
@@ -216,7 +223,7 @@ void bb_motor::motorTest()
         milliDelay( 500);
     for( int x = 2; x < 4; ++x) analogWrite( MSpin[ x], 0);   // set Left motor PWM pins to half speed.
         milliDelay( 500);
-    reset();        //  motor reset
+    motorReset();        //  motor reset
 }
 
 void bb_motor::printData()
