@@ -1,4 +1,4 @@
-//  =============  Notes from the Platform Main Program  =============
+﻿//  =============  Notes from the Platform Main Program  =============
  *  20JUL15 - changed average to nearness
  *  04JUL15 - extra IR LED hardware running
  *            doesn't seem to make much difference
@@ -51,6 +51,15 @@
  *            have to manually reset the AVR when I want to upload new software.
  *            I'm considering using an interrupt; the bigger problem is that
  *            I don't know what causes it to lose control, lock up and run away.
+ *  26FEB19 - Added a modified TFMPlus-Mini Library (bb_tfmp) in order to support
+ *            Lidar sensor. Added MegaServo library to replace custom PWM code.
+ *            Maybe I will lose fewer servos that way.
+ *  07MAR19 - made 't3flag' volatile
+ *  30MAR19 - made Lidar routine library and rearranged range
+ *            read to match servo position as transmitted to joystick.
+ The robot platform loop contains a 'control' sub-loop
+ triggered by a 50ms time to effectively run at 20Hz.
+
  
     // =====================   Compass Calibration Routine   =====================
     // NOTE: #define COMPASS_DEEBUG must be set to (1) in 'defines.h'
@@ -73,6 +82,31 @@
  
  
 //  =============  Notes from the Joystick Main Program  =============
+ * Described: THIS IS THE SLAVE/RF RECEIVER
+ * Inception: 19APR2015
+ * 03AUG15 - reworked the button debounce code
+ * 13SEP15 - switched radio to use acknowledge packet
+ *           rather than separate TX and RX pipes
+ * 27MAY16 - synchronize with 50ms platform loop
+ *           wait for rDat to complete before
+ *           writing data to processing display
+ * 03AUG16 - changed the name
+ * 16AUG16 - made 'joystick' library exclusive to 'joy.ino'
+ * 05NOV16 - reversed sense of Radio light. Now ON is okay.
+ * 16JAN17 - jDat.flagBits became 'sigBits' or signal bits
+ *           any bit 'true' toggles a platform flag bit
+ * 11FEB17 - Severely rearranged commands in attempt
+             to synchronize joystick with platform
+   20JUL17 - Both running 50ms loops but NOT synchronized
+   18NOV17 - Got rid of loop timer and replace with radio IRQ
+             to synchronize the controller with the platform.
+             The Loop runs free and services the radio upon request.
+   15DEC17 - Modified joytick.cpp to send HEX numbers in effort
+             to shorten serial transmission time.
+   08MAR19 - Working in the coal mine.. going down, down, down.
+             Trying to rehabilitate budbot2.
+             Getting radio IRQs. Yippee!
+
 //  - - - - - -  End of Notes from the Joystick Main Program  - - - - - -
  
 //  =============  Notes from the Compass Program  =============  
