@@ -5,6 +5,9 @@
  *            and universal budbot2 functions and variables.
  * Last Work: 07MAR19 - moved Timer 4 PWM generator setup
  *            for servos to here from 'servo.cpp'
+ *            02NOV19 - reworked AD setup and read to
+              remove IR sensing, and to formalize code
+							for the Motor Current sensing.
  */
 
 #include <Arduino.h>
@@ -222,42 +225,39 @@ void printAllData()
 //  = = = = = = = =  Platfrom Only Routines  = = = = = = = = =
 #ifdef __AVR_ATmega2560__
   //  ------------------------------------------------------
-  //  Custom routine for reading analog to digital inputs
-  //  This is used only in 'alarms.cpp' to test motor current.
-  //  It was used in 'servo.cpp' to read the IR sensor.
+  //  Custom setup and routine for reading analog inputs
+  //  Used only in 'alarms.cpp' to test motor current.
+  //  (Former use in 'servo.cpp' to read the IR sensor.)
   //  ------------------------------------------------------
-  //  Sets multiplexer to input channel and gets ADC data
-  //  Includes a recommended discard of the first conversion
-  //  Returns a 16 bit unsigned integer value.
+  //  Set multiplexer to input channel and get ADC data
+  //  Include a recommended discard of first conversion
+  //  Return a 16 bit unsigned integer value.
+  //  Motor Current pins are in "defines.h"
+  //  ------------------------------------------------------	
+	//  Analog Comparator starts on p.265 of Mega256 data sheet
+	//  Register Description starts on p.281 of Mega256 data sheet
   uint16_t readADCInput( uint8_t adcIn)
   {
-      //  Register Description begins on p.281 of the Mega256 data sheet
       uint16_t result;       // Declare variable 'result'
+      //  ADMUX: ADC Multiplexer Selection Register			
       //  The ADMUX register controls the inputs to the ADC
       //  First 8 analog inputs (A0-A7) are ATmega pins 54 - 61
-      //  Second 8 analog inputs (A8-A15) are ATmega pins 62 - 69
-      ADMUX = adcIn - 54;    // set pin numbers 0 - 15 in ADMUX3:0
-      if( adcIn > 61)        // If reading inputs above A7,
-      {                      // such as for motor current,
-          CLR( ADMUX, 3);    // clear MUX 3, and turn on
-          SET( ADCSRB, 3);   // MUX 5 (ADCSRB:3)instead
-          SET( ADMUX, 7);    // set 1.1V as reference
-      }
-      else // ********  Deprecated 26FE19. Not using IR sensor anymore  ********
-      {                        // When reading IR sensor (Input A1)
-          SET( ADMUX, 6);      // set AVCC as reference
-   //       SET( ADMUX, 6);    // set 2.56V as reference
-   //       SET( ADMUX, 7);    // set 1.1V as reference
-          CLR( ADCSRB, 3);     // and turn OFF MUX5
-      }
-      SET( ADCSRA, 7);       // Set Reg A bit 7 = Enable ADC (ADEN)
-      SET( ADCSRA, 6);       // Set Reg A bit 6 = Start Conversion (ADSC)
-      while( CHK( ADCSRA, 6));  // Wait for conversion to complete
-      SET( ADCSRA, 6);       // Discard first conversion. Start again.
-      while( CHK( ADCSRA, 6));  // Wait for conversion to complete
+      //  Next 8 analog inputs (A8-A15) are ATmega pins 62 - 69
+			//  Motor Current input pins are A8, A9, A10 & A11
+			//  This sets a 2.56V reference and input pin number.
+      ADMUX = 0xC0 | 0x07 & (adcIn - 54);
+			
+   		// ADCSRA: ADC Control and Status Register A
+      // Set bit 7 = Enable ADC (ADEN)
+      // Set bit 6 = Start Conversion (ADSC)
+			ADCSRA |= _BV(ADEN) | _BV(ADSC);
+      while( ADCSRA & _BV(ADSC));  // Wait for conversion to complete
+			ADCSRA |= _BV(ADSC);   // Discard first conversion. Start again.
+      while( ADCSRA & _BV(ADSC));  // Wait for conversion to complete			
+
       result = ADCL;         // Get low order bits
       result |= ADCH << 8;   // Get high order bits
-      CLR( ADCSRA, 7);       // Set Reg A bit 7 = AD Enable OFF
+      CLR( ADCSRA, 7);       // Set Reg A bit 7 = Disable ADC
       return result;
   }
 
@@ -267,17 +267,22 @@ void printAllData()
     cli();  //  stop all interrupts
       //  Turn on the Analog Comparator
       ACSR = 0;
-      //  Status Reg A: ADC Enable, 128 prescalar
+			//  ADCSRA: ADC Control and Status Register A
+			//  Set bit 7: ADEN - ADC Enable
+      //  and bits 2, 1 & 0: prescalar 128
       ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
-      //  Status Reg B: Multiplex Enabled (ACME), no trigger (free running)
-      ADCSRB = 0x40;
-      //  MUX Reg: AVCC with external capacitor at AREF pin
+			//  ADCSRB: ADC Control and Status Register B
+			//  Set bit 6: Analog Comparator Multiplexer Enable (ACME)
+      //  Set bit 4: MUX5 - set inputs: ADC8 - ADC15
+      ADCSRB = _BV(ACME) | _BV(MUX5);
+      //  ADMUX: ADC Multiplexer Selection Register
+      //  Set bit 6: AVCC with external capacitor at AREF pin
       ADMUX = 0x40;
-      //  Disable all inputs except A0-A3 & A8-A11. Saves power?
+      //  Disable all inputs except A8 - A11. Saves power?
       //  When bit is written logic one, the digital input buffer
       //  on the corresponding ADC pin is disabled.
-      DIDR0 = 0xF0;        //  Disable inputs 7-4
-      DIDR2 = 0xF0;        //  Disable inputs 15-12
+      DIDR0 = 0xFF;        //  Disable inputs: 0 - 7
+      DIDR2 = 0xF0;        //  Disable inputs: 12 - 15
     sei();  //  allow interrupts again
   }
 
@@ -331,7 +336,7 @@ void printAllData()
         //    Set the same as for Channel A1.
         //  Bits 3-2: Compare Output Mode for Channel C1
         //    Set to zero
-        //  Bits 2-0: Waveform Generation Mode
+        //  Bits 1-0: Waveform Generation Mode
         //    Phase Correct, 10 bit (1024 count)
         TCCR4B = 0b00000011; // TCCR4B = _BV(CS41) | _BV(CS40);
         //    16M clock / 64 prescalar / 2048 (1024 up & down count)
@@ -366,15 +371,17 @@ void printAllData()
       printf( " |azPos% 04i", rDat1.azPos);  //  Servo Pan Position: 0 - 180°
       printf( " |Dist% 04u", rDat1.dist);
       printf( " |Flux% 05u", rDat1.flux);      
-      printf( " |Temp% 04u°F", rDat3.tmpF);
-/*
+      printf( " |Temp% 04u°F", rDat3.tmpC);
+
       printf("|FlagBits");
       for( int x = 0; x < 32; ++x)
       {
           if( ( rDat1.flagBits >> x) & 1) printf( "1"); else printf( "0");
       }
+/*
       printf( " rDat2");
-*/    printf( " |Clk%10lu", rDat2.botClock);   //  roBot System Clock in milliseconds
+*/
+      printf( " |Clk%10lu", rDat2.botClock);   //  roBot System Clock in milliseconds
       printf( " |Loop%5u", rDat2.loopTime);   //  roBot loop time in milliseconds
 /*      printf( "|BLC%10lu", rDat2.botLoop);  //  roBot Loop Counter
 
@@ -394,15 +401,15 @@ void printAllData()
 //      printf("M%1u ", fbCHK( fbMotor));     //  isMotorON
 //      printf("S%1u ", fbCHK( fbServo));     //  isServoON
 //      printf("A%1u ", fbCHK( fbAuto));      //  isAutoMode
-      printf(" |pReset%1u ", fbCHK( fbPosReset));      //  position reset
+//      printf(" |pReset%1u ", fbCHK( fbPosReset));      //  position reset
 //      printf("E%1u ", fbCHK( fbEvade));     //  is running evasion program
 //      printf("| mCurrent: ");
 
-/*    printf("| LF %05u ", rDat2.mcRay[ 0]); //  Motor Current
+      printf("| LF %05u ", rDat2.mcRay[ 0]); //  Motor Current
       printf("RF %05u ",  rDat2.mcRay[ 1]);
       printf("LR %05u ",  rDat2.mcRay[ 2]);
       printf("RR %05u",   rDat2.mcRay[ 3]);
-*/
+
       printf("\r\n");                       //  end of line
   }
 

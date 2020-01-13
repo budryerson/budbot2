@@ -3,6 +3,7 @@
  * Inception: lost in the mists of time 
  * Last Work:  8JUL16 - added four FC-51 corner LED collision detectors
  *            07MAR19 - increased deboounce time to 20ms
+              01NOV19 - modified motor current read to divide by two.  Why?
  * Described: definition of variables and functions supporting "alarm"
  *            There are four kinds of alarms
  *            1. Over current on a motor
@@ -42,7 +43,7 @@
           pinMode( odPin[ x], INPUT_PULLUP); // set Object Detector pins
           pinMode( odePin[ x], OUTPUT);      // set Object Detector Enable pins
       }
-      for( int x = 0; x < 4; ++x) pinMode( mcPin[ x], INPUT_PULLUP);     // Set Motor Current pins
+      for( int x = 0; x < 4; ++x) pinMode( mcPin[ x], INPUT);  // Set Motor Current pins
       for( int x = 0; x < 4; ++x) pinMode( rButPin[ x], INPUT);   // Set platform Button pins
       for( int x = 0; x < 4; ++x) pinMode( rLEDpin[ x], OUTPUT);  // Set platform LED pins
 
@@ -83,7 +84,7 @@
 
       // 2. Set platform flag bits according to jDat data
       // ( Cannot use rDat values because Auto mode changes those.)
-      fbBUT( fbManual, ( jDat.velocity || jDat.rotation != 0));
+      //fbBUT( fbManual, ( jDat.velocity || jDat.rotation != 0));
       fbBUT( fbRadio, jDat.radioIRQ);
       fbBUT( fbSerial, jDat.serial);
 
@@ -93,7 +94,12 @@
 
   //  Called by first line of main Control routine in 'control.cpp'
   //  Get and store the analog current value for each motor,
-  //  and return True if ANY Motor Current value is too high.
+  //  Analog to Digital (adc) conversion is in 'routines.cpp'
+  //  If no current is too high, restart the counter and return false.
+  //  If any current is too high, decrement the counter.
+  //  If the counter is expired, return true, else return false.
+  //
+  int8_t mcCount = 20;   // counts control loops, 20x = 1sec
   bool bb_alarm::testMotorCurrent()
   {
       static bool tooHigh;
@@ -106,13 +112,27 @@
       for( uint8_t i = 0; i < 4; i++)  // analog inputs 8 - 11
       {
           //  ADC read returns a 'uint16_t' type variable.
-          //  Save only the least significant 8 bits to mcRay.
           adcInput = readADCInput( mcPin[ i]);
-          rDat2.mcRay[ i] = ( uint8_t)adcInput;   // return low order byte
-          //  If any value is too high, return TRUE to set 'fbFault'.
-          if( rDat2.mcRay[ i] > MOTOR_CURRENT_HIGH) tooHigh = true;
+          if( adcInput < MOTOR_CURRENT_HIGH)        // If current not too high...
+          {                                         // (set to 150 in 'defines.h')
+              rDat2.mcRay[ i] = ( uint8_t)adcInput; // then save low-order byte mcRay.
+           }
+          else
+          {
+              rDat2.mcRay[ i] = MOTOR_CURRENT_HIGH;  // else save high value
+              tooHigh = true;                        // set tooHigh value 'true'
+          }
       }
-      return tooHigh;
+      if( tooHigh)          // If ANY current value too high
+      { 
+        if( mcCount > 0)    // If counter NOT expired
+        {
+          --mcCount;        // then dec counter
+        }
+        else return true;   // else return 'true'
+      }
+      else mcCount = 20;    // else reset counter.
+      return false;
   }
 
   // - - - -  Object Detector  - - - -

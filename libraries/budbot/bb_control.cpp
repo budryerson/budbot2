@@ -39,7 +39,7 @@
 
   void bb_control::setup()
   {
-      bbAlarm.setup();  // set motor current sense pins
+      bbAlarm.setup();       // set motor current sense pins
                              // set platform button pins
                              // set platform LED pins
       bbMotor.motorSetup();  //  set motor speed and direction pins
@@ -429,19 +429,19 @@
   }
 
   //  - - - - - - -   control Reset   - - - - - - - -
-  //  Clear all the flagBits except for Buttons & OD Flags ( 0x00FF)
-  //  and Manual, Reset, Object, Serial, Radio & Motor ( 0xE409).
+  //  Clear all the flagBits except for Buttons & OD Flags    ( 0x00FF)
+  //  and Manual, Reset, Object, Fault, Serial, & Radio       ( 0xEC08).
   //  Reset Object Detect by robot button #4, or by PC program.
   //  Why do we NOT reset OD flags?
   //
-  //                   Seek  Fault   Program Bear Track Pivot Halt Evade  Servo Auto
-  //  Manual Reset Object       Serial                                Radio        Motor
-  //    1110 0100 0000 1001 - flag bit mask
-  //      E4        09      - hex value
+  //                    Seek        Program Bear Track Pivot Halt Evade  Servo Auto Motor
+  //  Manual Reset Object  Fault Serial                              Radio
+  //    1110 1100 0000 1000 - flag bit mask
+  //       EC        08     - hex value
   void bb_control::controlReset()
   {
       firstAuto = true;                //  set TRUE when fbAuto flag falls
-      rDat1.flagBits &= 0x00FFE409UL;  //  clear flag bits
+      rDat1.flagBits &= 0x00FFEC08UL;  //  clear flag bits
       resetMotion();  // clear all motion values ( see above )
   }
 
@@ -465,10 +465,10 @@
       // = = = = = = = = = = = = =  Signal, Sense and Alarm   = = = = = = = = = = = = =
 
       //  - - - -   Alarm functions are always on  - - - -
-      //  Get motor current values and set 'fbFault' if any too high ('alarm.cpp')
-      //  *** Prevent reset of fbFault by fbManual for 3 seconds - not implemented yet ***
-      //if( bbAlarm.testMotorCurrent()) fbSET( fbFault);
-
+      //  Test motor current values in 'alarm.cpp'.
+      if( bbAlarm.testMotorCurrent()) fbSET( fbFault);  // will cause fbAuto to drop
+        else fbCLR( fbFault);
+     
       //  Sense corner object detectors ('alarm.cpp') and
       //  if 'fbOject' is set and not calibrating then set Evade Mode
       // Compile only if NOT calibrating velocity
@@ -476,12 +476,12 @@
       //if( bbAlarm.testObjectDetect())  setEvade();
       #endif
 
-      if( fbCHK( fbManual) ||                 //  If joystick is jogged, or
-        ( !fbCHK( fbAuto) && !firstAuto) ||   //  if 'dropping out' of Auto Mode, or
-          fbCHK( fbFault))                    //  if motor over-current condition...
+      if( fbCHK( fbManual) ||              //  If joystick is jogged, or
+          fbCHK( fbFault)  ||              //  if motor over-current condition or
+        ( !fbCHK( fbAuto) && !firstAuto))  //  if 'dropping out' of Auto Mode...
       {
           // ...then stop the platform and reset the following flags:
-          // Seek, Fault, Program, Bear, Track, Pivot, Halt, Evade, Servo & Auto
+          // Seek, Fault, Program, Bear, Track, Pivot, Halt, Evade, Servo, Auto & Motor
           //bbAlarm.printStatus();
           controlReset();
       }

@@ -86,6 +86,9 @@
           spdDiff = 255 - abs( jDat.velocity);  // find limit of rotation on velocity
           jDat.rotation = intConstrain( jDat.rotation, ( spdDiff * -1), spdDiff);
       }
+      // Set MANUAL flag if joystick is moved
+      if( jDat.velocity || jDat.rotation != 0) fbTOG( fbManual);
+      //if( jDat.sync == true) fbTOG( fbRadio);
 
       //  - - - - - - - - -  Check three joystick buttons  - - - - - - -
       //  Check three joystick button and start a separate timer for each.

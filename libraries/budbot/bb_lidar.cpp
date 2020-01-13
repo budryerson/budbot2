@@ -7,6 +7,7 @@
  *            before doing Lidar read.  USed to see 8 degree postion offset.
  *            Now data is more timely.
  *            25APR19 - Now includes all servo controls
+ *            28OCT19 - Now calls the TFMini-Plus I2C library
  */
 
 #ifdef __AVR_ATmega2560__
@@ -24,26 +25,31 @@
     bb_lidar::bb_lidar(){}
     bb_lidar::~bb_lidar(){}
  
-    #include <TFMPlus.h>     //  Add the TFMini Plus Library
-    TFMPlus bbTfmp;          //  Create a TFMini-Plus object
+    #include <TFMPI2C.h>     //  Add TFMini-Plus-I2C Library
+		                         //  TFMP_DEFAULT_ADDRESS   0x10
+    TFMPI2C bbTfmp;          //  Create a TFMini-Plus object
 
     //  - - - - - -   Lidar Setup   - - - - - - - - - -
     void bb_lidar::setup()
     {
-        //  setup TFMini-Plus Lidar sensor
-        Serial2.begin( 115200);  // Initialize device serial port.
-        delay(20);               // Give port time to initalize
+        // Setup TFMini-Plus Lidar sensor
+        printf("TFMini-Plus I2C library in use.\r\n");
+				
+        printf( "Lidar device system reset ");
+        if( bbTfmp.sendCommand( SYSTEM_RESET, 0)) printf( "pass.");
+            else printf( "fail.");
+        printf( ". Status = %2u\r\n", bbTfmp.status);
+				
+        printf( "Lidar frame rate ");
+        if( bbTfmp.sendCommand( SET_FRAME_RATE, 100)) printf( "set to %2uHz", 100);
+            else printf( "command failed");
+        printf( ". Status = %2u\r\n", bbTfmp.status);
 
-        // Initialize lidar device object and pass serial port.
-        // Display message whether Lidar device is available
-        printf("Lidar device serial port \"Serial2\" ");
-        if( bbTfmp.begin( &Serial2)) printf( "initalized.");
-          else printf( "not available.");
-        printf( "\r\n");
+        printf( "Lidar device settings ");
+        if( bbTfmp.sendCommand( SAVE_SETTINGS, 0)) printf( "saved");
+            else printf( "not saved");
+        printf( ". Status = %2u\r\n", bbTfmp.status);
 
-        //factoryReset();
-        frameRate( 100);
-        //saveSettings();
         delay(20);              // And wait a moment
         
         bbServo.setup();  // set Timer4 to function as PWM
@@ -52,45 +58,6 @@
                           // reset servos to center position
     }
     //  - - - - - -   End of Lidar Setup   - - - - - - - - -
-
-    /*  - - -   Several useful Lidar commands    - - - -   */
-    void bb_lidar::factoryReset()
-    {
-        printf( "Lidar device system reset ");
-        if( bbTfmp.sendCommand( RESTORE_FACTORY_SETTINGS, 0))
-        {
-            printf( "pass.");
-        }
-        else printf( "fail.");
-        printf( ". Status = %2u", bbTfmp.status);
-        printf( "\r\n");
-    }
-
-    void bb_lidar::frameRate( uint16_t rate)
-    {
-        printf( "Lidar device frame rate ");
-        if( bbTfmp.sendCommand( SET_FRAME_RATE, rate))
-        {
-            printf( "set to %2uHz", rate);
-        }
-        else printf( "command failed");
-        printf( ". Status = %2u", bbTfmp.status);
-        printf("\r\n");
-    }
-
-    void bb_lidar::saveSettings()
-    {
-        printf( "Lidar device settings ");
-        if( bbTfmp.sendCommand( SAVE_SETTINGS, 0))
-        {
-            printf( "saved");
-        }
-        else printf( "not saved");
-        printf( ". Status = %2u", bbTfmp.status);
-        printf( "\r\n");
-    }
-    /*  - - -   End of useful Lidar commands   - - - -   */
-
 
     /*  - - - - -   TFMini-Plus Lidar sensor Read  - - - -  */
     //  If no read then set range to zero.
@@ -106,13 +73,12 @@
         {
           rDat1.dist = tfDist;
           rDat1.flux = tfFlux;
-          // Decode tfTemp value to °F
-          rDat3.tmpF = uint16_t( tfTemp * 0.225) - 493;
+          rDat3.tmpC = tfTemp; 	// rDat3 is in 'shared.h'
+										            // decoded to °C in library
           break;
         }
         else
-        {
-          // or else report the status in "distance"
+        { // or else report the status in "distance"
           rDat1.dist = bbTfmp.status;
         }
       }

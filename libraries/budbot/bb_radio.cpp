@@ -23,6 +23,13 @@
  *              transmitter (PTX) and joystick is primary receiver (PRX)
  *    18JUL17 - added Wait Timers to both sides to avoid hang
  *              while waiting for second packet
+ *    05DEC19 - Added high power module to platform.
+ *              Set TX to lowest power (0).  Seems to be working okay.
+ *    25DEC19 - Added high power module to joystick.
+ *              Set TX to lowest power (0).  Did not work.
+ * Maybe high power module requires more current?
+ * Switched back to regular module, left power at 'minimum'.
+ * Works okay now.
  */
 
 #include <Arduino.h>
@@ -77,8 +84,8 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
                                   // Range: 0 to 15 max; 0 = 250us; 15 = 4000us.
                                   // Set number of retries before giving up.
                                   // Range: 0 to 15 max
-      // radio.setPALevel( 0);       // Set nRF24L01 TX power to minimum: -18dBm
-      radio.setPALevel( 3);       // Set Power Amplifier output to one of four levels
+      radio.setPALevel( 0);       // Set radio Power Amp level to minimum.
+      //radio.setPALevel( 3);       // Set Power Amplifier output to one of four levels
                                   // RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH and RF24_PA_MAX,
                                   // corresponding to NRF24L01 output levels:
                                   // -18dBm, -12dBm,-6dBM, and 0dBm
@@ -155,9 +162,9 @@ RF24 radio( CEpin, CSNpin); //  Board specific SPI pin numbers
       radio.setRetries( 4, 5);   // Set delay between retries from 0 to 15 max
                                  // in 250us increments. 0 = 250us; 15 = 4000us.
                                  // Set number of retries from 0 to 15 max before giving up.
-      //radio.setPALevel( 0);      // Set radio TX power to minimum: -18dBm plus
+      radio.setPALevel( 0);      // Set radio TX power to minimum: -18dBm plus
                                  // New 20dB power amp yields +2dBm total TX output
-      radio.setPALevel( 3);      // Set radio TX Power Amp Level to maximum: +8dBm
+      //radio.setPALevel( 3);      // Set radio TX Power Amp Level to maximum: +8dBm
       radio.openWritingPipe( pipe0);
 
 //      #if( RADIO_DEBUG)

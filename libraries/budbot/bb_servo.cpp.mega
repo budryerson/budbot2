@@ -1,0 +1,355 @@
+/* File Name: bb_servo.cpp
+ * Developer: Bud Ryerson
+ * Described: One of the first things I ever wrote.
+     This controls setup, testing and control of the servo panning motion
+     of the IR sensor as well as interpretation of data from the sensor.
+ * Inception: Probably inherited from budbot1
+ * 26DEC15 - converted servo from "bit bang" to
+             Atmega's internal PWM generator
+ * 07JAN16 - changed servo direction to deviation value
+             simplified servo pulse code
+ * 24SEP16 - Folded the "eye" library into the "servo" library
+             in order to manipulate the position of sensor values
+             that appear offset depending on the scan direction.
+ * 10DEC16 - reworked sweep routine, eliminated servo reset
+ * 20FEB17 - modified servo to work more precisely and not to
+             pulse when Servo is OFF and the servo is centered
+ *  8MAR17 - Installed a separate 5V supply for IR sensor
+ * 30MAR17 - Replaced burned out analog HiTEc HS322 servo motor with digital Tower Pro MG996R
+             Installed another separate 5V supply for servo motor.
+             Got rid of IR sensor ring buffer.
+             Now sample IR sensor values 10X for each servo reposition.
+ * 26FEB19 - Replaced IR code with TFMini-Plus Lidar code.
+             Added MegaServo library to replace the custom servo timing code.
+ * Should someday include these features:
+        Scan mode,
+        encounter mode,
+        pursuit mode
+ */
+
+//  = = = = = = = =  Compile this file ONLY for the MEGA2560  = = = = = = = =
+#ifdef __AVR_ATmega2560__
+
+    #include <Arduino.h>
+    #include <bb_defines.h>
+    #include <bb_shared.h>
+    #include <bb_routines.h>
+
+    #include <bb_servo.h>
+    bb_servo::bb_servo(){}
+    bb_servo::~bb_servo(){}
+    
+    #include <bb_tfmp.h>     //  Add the TFMini Plus Library
+    bb_tfmp bbTfmp;          //  Create a TFMini-Plus object
+
+    #include <MegaServo.h>   //  Add the MegaServo library
+    MegaServo azServo;       //  Create azimuth servo object
+    MegaServo elServo;       //  Create elevation servo object
+
+    // servos are attached to pins 5 & 6 and rotate from 0-180 degrees by 1 degree increments.
+    int azPin = 6;     // azimuth (az) servo PWM pin number
+    int elPin = 5;     // elevation (el) servo PWM pin number
+
+    // Definitions for the servo library
+    #define    SERVO_CENTER     1520   // center (neutral) servo position in µsec
+    #define    SERVO_ONE_DEG       9   // one degree of servo position in µsec
+    #define    SERVO_TWO_DEG      19   // two degrees of position in µsec
+
+    int horizon = SERVO_CENTER - ( SERVO_ONE_DEG * 45);
+    int leftStop = SERVO_CENTER - ( SERVO_ONE_DEG * 90);
+    int rightStop = SERVO_CENTER + ( SERVO_ONE_DEG * 90);
+
+    int zenith  = SERVO_CENTER + ( SERVO_ONE_DEG * 45);
+    int lowStop = SERVO_CENTER - ( SERVO_ONE_DEG * 90);
+    int highStop = SERVO_CENTER + ( SERVO_ONE_DEG * 90);
+
+    int azPos = SERVO_CENTER;    // servo postion in microseconds
+    int elPos = SERVO_CENTER;
+    
+    int azInc = 1;    // azimuth increment value
+    int elInc = 1;    // elevation increment value
+    int scanQuad = 1; // scan quadrant 1 -4
+
+    int srvPosOff;               //  servo position plus offset
+    uint16_t srvRay[ 181];       //  array of Lidar range values
+    uint16_t servoOffset;        //  offset value for servo position used in servoSet()
+    bool lidarFlag = false;
+    //uint16_t minPos = 90;      //  servo position of minimum range value
+
+    //  Configure register values and output pin for servo
+    void bb_servo::setup()
+    {
+        //  setup servo interrupts and pin assingments
+        //azServo.attach( azPin);   // assign servo control pin 6
+        //elServo.attach( elPin);   // assign servo control pin 5
+       
+        //servoTest();       //  swivel servo back and forth
+        resetServo();
+        
+        //  setup TFMini-Plus Lidar sensor
+        Serial1.begin( 115200);  // Initialize device serial port.
+        delay(20);               // Give port time to initalize
+
+        // Initialize lidar device object and pass serial port.
+        // Display message whether Lidar device is available
+        printf("Lidar device serial port \"Serial1\" ");
+        if( bbTfmp.begin( &Serial1)) printf( "initalized.\r\n");
+          else printf( "not available.\r\n");
+        
+        delay(500);              // And wait half a second.
+    }
+
+    //  Configure register values and output pin for servo
+    void bb_servo::resetServo()
+    {
+        memset( &srvRay, 250, sizeof( srvRay));    // clear the Servo Position Array
+        rDat1.srvPos = 0;   //  set position to center
+        servoOffset = 0;    //  set offset to zero
+        servoSet();         //  strobe the servo
+        fbCLR( fbServo);    //  Servo = OFF
+        fbCLR( fbSeek);     //  Seek  = OFF
+        firstScan = true;   //  for 'scanOnce()' routine
+    }
+
+    //  = = = = = = =  TFMini-Plus Lidar sensor Read  = = = = = =
+    //  If device not READY, or no read after 6 tries,
+    //  then set range to zero.
+    void bb_servo::lidarRead()
+    {
+      if( bbTfmp.status == 0)      /// if the device status is READY
+      {
+        uint16_t flux, temp;
+        bbTfmp.status = bbTfmp.getData( rDat1.range, flux, temp);  // try to read the data
+        if( bbTfmp.status != 0)                                    // if error status
+        {
+          for( uint8_t i = 0; i < 6; ++i)                          // try to read 5 more times
+          {
+            bbTfmp.status = bbTfmp.getData( rDat1.range, flux, temp);
+            if( bbTfmp.status == 0) break;                         // break loop if good read
+          }
+        }
+      }
+      if( bbTfmp.status == 0) srvRay[ rDat1.srvPos + 90] = rDat1.range;
+         else srvRay[ rDat1.srvPos + 90] = 0;
+    }
+
+    //  = = = = = = = = = =  Servo Set  = = = = = = = = = = = =
+    //  Set azimuth and elevation servos position in microseconds
+    //  = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+    void bb_servo::servoSet()
+    {
+        // srvPos rangers above (+) and below (-) 0°
+        azPos = SERVO_CENTER + ( SERVO_ONE_DEG * rDat1.srvPos);
+        azServo.attach( azPin);
+        azServo.writeMicroseconds( azPos);
+        delay(2);
+        azServo.detach();
+
+        elPos = SERVO_CENTER + ( SERVO_ONE_DEG * rDat1.srvPos);
+        elServo.writeMicroseconds( elPos);
+    }
+
+    //  = = = = = = = = = =  Pan servo back and forth  = = = = = = = = = =
+    //  If Servo is OFF, pulse only until centered and then cease pulsing.
+    //  Oddly, the servo reports different angles whether panning right or left.
+    //  Also, different brands of servos behave differently.
+    //  The servo offset value 'servoOffset' is added to compensate for that behavior.
+    int sweepStep = -1;                   //  Initialize sweep direction to the left
+    void bb_servo::sweep()
+    {
+        lidarRead();   // read lidar if device is READY
+
+        if( fbCHK( fbServo))      //  fbServo is set by Joystick Button 3
+        {                         //  or Robot Button 1
+            if( fbCHK( fbSeek))   //  fbSeek is set by 'autoControl' in 'control.cpp'
+            {
+                scanOnce();       // immediately move to left postion and settle
+            }                     // sweep once right, once left and return to center
+            else
+            {
+                if( rDat1.srvPos <= SWEEP_MIN) //  If scan at left limit
+                {
+                   // getTarget();
+                    sweepStep = 1;            //  Set pan direction right.
+                    servoOffset = -2;         //  minus offset moves target left
+                                              //  value not to exceed ±70
+                    rDat1.srvPos = SWEEP_MIN; //  Constrain the position.
+                }
+                else if( rDat1.srvPos >= SWEEP_MAX) //  If at right limit
+                {
+                  //  getTarget();                  
+                    sweepStep = -1;           //  set pan direction left.
+                    servoOffset = 2;          //  plus offset moves target right
+                                              //  value not to exceed ±70
+                    rDat1.srvPos = SWEEP_MAX;
+
+                }
+//                rDat1.srvPos += sweepStep;     //  then pan servo along horizontal...
+//                servoSet();                  //  and pulse the servo
+            }
+            rDat1.srvPos += sweepStep;     //  then pan servo along horizontal...
+            servoSet();                  //  and pulse the servo
+        }
+        else                         //  If Servo is OFF,
+        {                            //
+            if( rDat1.srvPos != 0)   //  pulse servo until centered
+            {                        //
+                if ( rDat1.srvPos > 0) --rDat1.srvPos;
+                else if ( rDat1.srvPos < 0 ) ++rDat1.srvPos;
+                servoSet();        //
+            }                        //
+            else servoOffset = 0;    //  zero offset when centered
+                                     //  no pulse when centered
+            // Test print for stuttering servo
+            //   printf("Servo Dir: % 04i", rDat1.srvPos);
+            //   printf("\r\n");
+        }
+    }
+
+    //  = = = = = = = =  Sweep servo back and forth one time  = = = = = = = =
+    //  Periodically, robot will stop and scan one time.
+    //  This may be more useful than continuous panning since landmarks can
+    //  be sensed, stored, and possibly identified as location beacons
+    void bb_servo::scanOnce()
+    {
+        static int firstCount;
+        if( firstScan)                  // initialized 'true' in setup
+        {
+            sweepStep = 1;              //  Initialize sweep direction to the right
+            servoOffset = -2;           //  minus offset moves target left
+                                        //  value not to exceed ±70
+            rDat1.srvPos = SWEEP_MIN;   //  set servo position to far left
+            firstCount = 0;
+            firstScan = false;          // reset firstScan
+        }
+//        servoSet();                   //  slew servo
+        if( firstCount > 10)            //  do nothing for 10 loops (0.5 sec)
+        {                               //  while servo stabilzes in new position
+            if( rDat1.srvPos >= SWEEP_MAX)   //  When at right limit
+            {
+                getTarget();
+                sweepStep = -1;            //  set pan direction the left.
+                servoOffset = 2;           //  plus offset moves target right
+                                           //  value not to exceed ±70
+                rDat1.srvPos = SWEEP_MAX;
+            }
+            else if( rDat1.srvPos <= SWEEP_MIN)  //  When too far left,
+            {
+                getTarget();
+                rDat1.course = rDat1.nearPos;   // set course to the target
+                resetServo();                   // center servo position
+            }
+            //rDat1.srvPos += sweepStep;      //  increment servoPos            
+        }
+        else ++firstCount;
+    }
+
+    // This will identify the closest left- and right-most IR reflections
+    // as the boundaries of a "target" to determine the auto-directed motion
+    // of the platform.
+    //   nPos1 - relative position of the nearest westward reflection
+    //   shad2 - relative position of the nearest eastward reflection
+    //   nPos3 - median of nPos1 & nPos2 and the new platform heading
+    void bb_servo::getTarget()
+    {
+        int nPos1 = 30;   // far west
+        int nPos2 = 150;  // far east
+        int nPos3 = 90;   // center
+        // find the westernmost, nearest point
+        for( int i = 30; i <= 150; ++i)
+          if( srvRay[ i] < srvRay[ nPos1]) nPos1 = i;
+        // find the easternmost, nearest point
+        for( int i = 150; i >= 30; --i)
+          if( srvRay[ i] < srvRay[ nPos2]) nPos2 = i;
+
+        // find bearing to target ±90°
+        rDat1.nearPos = intDiv( ( nPos1 + nPos2), 2) - 90;
+        // intConstrain( rDat1.nearPos, SWEEP_MIN, SWEEP_MAX);  // constrain to ±60°
+    }
+
+    //  = = = = = = =  Check Scan Timer  = = = = =
+    //  Stop everything and perform scan.
+    //  Only check while in AUTO or PROGRAM mode
+    #define SCANTIME 3000                   //  Define SCANTIME as 3 seconds
+    unsigned long scanTimer = SCANTIME;     //  Initialize scan timer
+    void bb_servo::checkScanTimer()
+    {
+      if( scanTimer < millis())             // if scan timer expired
+      {
+          servoTest();
+          scanTimer = millis() + SCANTIME;  // reset scan timer.
+      }
+    }
+
+    //  = = = = = = = = = =  Servo Test  = = = = = = = = = =
+    //  Swivel the neck from -90 to +90 degrees and return to center
+    void bb_servo::servoTest()
+    {
+        rDat1.srvPos = 0;  //  set servo position to center
+        servoOffset = 0;
+        int pStep = -1;           //  set position step leftwards
+        for( int x = 0; x < 360; ++x)
+        {
+            //  if either limit encountered, flip the position increment sign
+            if( rDat1.srvPos <= SERVO_MIN || rDat1.srvPos >= SERVO_MAX) pStep *= -1;
+            rDat1.srvPos += pStep;        //  increment position
+            servoSet();
+            milliDelay( 20);
+        }
+        while( rDat1.srvPos != 0)  // pulse servo until centered
+        {
+            if ( rDat1.srvPos > 0) --rDat1.srvPos;
+            else if ( rDat1.srvPos < 0 ) ++rDat1.srvPos;
+            servoSet();
+            milliDelay( 20);
+        }
+        fbCLR( fbServo);       //  set Servo Mode OFF
+        //resetServo();  // turn Servo OFF and return to center
+    }
+
+    void bb_servo::printServoData()
+    {
+        printf( "Pan Position: % 3i |", rDat1.srvPos);     //  A = Azimuth
+        printf( "Range: %u |", rDat1.range);
+        printf( "Pan Pulse: % 3i", map( rDat1.srvPos,  SERVO_MIN, SERVO_MAX, 70 + servoOffset, 290 + servoOffset));
+        printf("\r\n");
+    }
+
+    void bb_servo::tilt()
+    {
+      if( elPos <= lowStop || elPos >= highStop)   // if elevation too high or low
+      {
+        elPos = highStop;     // set elevation to highStop
+        if( elInc != 0)       // if not on secondary scan
+        {
+          elInc = 0;          // set flag to secondary scan
+          elPos += 10;        // offset highStop position
+        }
+        else elInc = 1;       // set flag to primary scan
+      }
+      // set servo position between -20° and +20° (1070 - 1920 usec)
+      elServo.writeMicroseconds( (int)elPos);
+      elPos -= SERVO_TWO_DEG;
+    }
+
+    void bb_servo::servoBump()
+    {
+      if( azPos <= leftStop)
+      {
+        tilt();
+        azPos = leftStop + ( elInc * 10);
+        azInc = 1;
+      }
+      else if( azPos >= rightStop)
+      {
+        tilt();
+        azPos = rightStop + ( elInc * 10);
+        azInc = -1;  // reverse direction
+      }
+      // set azimuth servo position to between -90° and +90°
+      azServo.writeMicroseconds( (int)azPos);
+      azPos += ( SERVO_TWO_DEG * azInc);
+    }
+
+
+#endif  //  #if defined(__AVR_ATmega2560__)

@@ -17,10 +17,6 @@ class bb_lidar
 
         void setup();  // setup lidar sensor
         void read();   // read Lidar sensor and get data
-
-        void factoryReset();
-        void frameRate( uint16_t rate);
-        void saveSettings();
 };
 
 #endif

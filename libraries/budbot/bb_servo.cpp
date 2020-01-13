@@ -26,7 +26,7 @@
              Added interrupt on/off when setting OC registers
  * 28MAR19 - took lidar out of servo and created separate routine library
  * 11APR19 - Finally got rid of 'servoOffset'. Mystery solved!
- * 25APR19 - Servo routines moved to and now called by Lidar routines
+ * 25APR19 - Servo routines moved to 'lidar.cpp' and now called by Lidar routines
  * Should someday include these features:
         Scan mode,
         encounter mode,
@@ -121,8 +121,9 @@
     void bb_servo::servoSet()
     {
         // convert azimuth index value to Timer4 ticks
-        int azTick = floatToInt( srvDat.azDex * 1.22) + 55;
-        // constrain range of ticks to 55 - 275 or ±90°
+				// (for some reason we had to resverse the 'tick' range);
+        int azTick = floatToInt( srvDat.azDex * -1.22) + 275;
+        // constrain range of ticks to 55 - 275 or 180-0°
         azTick = intConstrain( azTick, 55, 275);
         // do the same for elevation servo position
         //int elTick = floatToInt( ( rDat1.elPos + 90) * 1.22) + 55;

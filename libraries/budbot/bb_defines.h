@@ -138,7 +138,7 @@
 #define jZmax   ( jZmid + jZone)   //  dead zone upper bound
 
 #define crnrDstMin  200   //  Alarm average from corner sensor
-#define MOTOR_CURRENT_HIGH  200   //  Current reading considered too high or "stuck"
+#define MOTOR_CURRENT_HIGH  150   //  Current too high/motor stuck
 
 //  ==============    Encoder Definitions    ==============
 #define encWidMin 1838      //  Dual Encoder Width Minimum at 8,500RPM

@@ -265,7 +265,7 @@ struct roboStruct3
     int rotation;       // 2-3  and read by motor control every 50ms.
     int nearDex;        // 4-5 lowest distance array index value
     int farDex;         // 6-7 highest distance array index value
-    int tmpF;           // 8-9 Lidar temperature in degrees Farenheit
+    int tmpC;           // 8-9 Lidar temperature in degrees Celsius
     uint16_t distRay[ 181];  // array of Lidar distance values for each servo position
     uint16_t fluxRay[ 181];  // array of Lidar strength values for each servo position
 	  //uint32_t gpTimer;     // general purpose timer
@@ -291,7 +291,23 @@ struct joyStruct {   // Joystick data structure
     };
     uint32_t joyLoop;    // 5-8  number of joystick loops since power up
     uint16_t sigBits;    // 9-10 Unsigned 16 bit value for Joystick signals.
-                         // Joystick Buttons are first three bits
+    /* 0 = Motor is ON   // Joystick Buttons are first three bits
+       1 = Auto (autonomous navigation) is ON
+       2 = Servo is ON
+       3 = Radio is ON and linked
+       4 = Serial is ON and linked
+       5 = Evade, trying to escape from trapped position
+       6 = Halt, no wheel encoder clicks during 40 auto control cycles (2 seconds)
+       7 = Pivot, spinning in place to a new heading
+       8 = Track, traveling on a set course
+       9 = Bear, whenever Heading differs from Course
+      10 = Program, running a sequence of steps
+      11 = Fault
+      12 = Seek, sweep servo one time to acquire target
+      13 = Object Detection is ON
+      14 = Reset Position
+      15 = Manual, when joystick is moved out of dead zone                         
+    */
     uint16_t tFlags;     // 11-12 Unsigned 16 bit value for timing flags.
     uint16_t jvX;        // 13-14 joystick X: 0-1023 unsigned integer from analog pin A0
     uint16_t jvY;        // 15-16 joystick Y: 0-1023 unsigned integer from analog pin A1
