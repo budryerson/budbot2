@@ -24,6 +24,8 @@
    08MAR19 - Working in the coal mine.. going down, down, down.
              Trying to rehabilitate budbot2.
              Getting radio IRQs. Yippee!
+   28OCT19 - Working at Fort Bud.
+             Deleted all the radioIRQ stuff.
  */
 
 #include <Arduino.h>
@@ -40,6 +42,7 @@
 
 #include <bb_joystick.h>   // load the joystick library
 bb_joystick bbJoystick;    // initialize a jostick object
+
 #include <bb_radio.h>      // load the radio library
 bb_radio bbRadio;          // initalize a radio object
 /* - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -53,10 +56,12 @@ void jriSR()       // attached to Interrupt 0 below
 }
 /* - - - - - - - - - - - - - - - - - - - - - - - - - */
 
+
+
 void setup()
 {
     Serial.begin( 115200);   //  initialize the serial port
-    Serial.flush();          //  flush the serial buffer
+    Serial.flush();          //  flush the serial output buffer
     printf_begin();          //  initialize the printf module
     SPI.begin();             //  initiate the SPI object for the Radio
 
@@ -68,18 +73,19 @@ void setup()
 
     attachInterrupt( 0, jriSR, FALLING);   // Attach joystick radio ISR
                                            // to Interrupt 0 (pin 2) going low.
-    radioFlag = false;                     // wait for Radio INT 0 set set true
+    radioFlag = false;                     // Initialize flag to 'False'.
+                                           // Gets set 'true' when INT 0 falls
 }
 
 void loop()
 {
-      jDat.joyClock = millis(); // save system clock in milliseconds
+      jDat.joyClock = millis(); // save system clock in millis - uint32
       bbJoystick.readData();    // Get joystick position data, and test
                                 // buttons to set jDat signal bits.
 
       //  If two rDat packets have been received and their loTime bytes agree
       //  (jDat.sync),then do 'putPaneData' and 'getPaneData' routines to and
-      //  from the PC display Processing package
+      //  from the PC display Processing package.  Reset radio1 & 2 and sync.
       if( jDat.sync)
       {
           bbJoystick.putPaneData();    //  Send platform (rData) to the PC;
@@ -88,37 +94,36 @@ void loop()
           digitalWrite( jBluPin, !digitalRead(jBluPin));   //  Toggle blue LED
   
           jDat.sync = false;    // reset the sync flag
-          jDat.radio1 = false;
-          jDat.radio2 = false;
+         // jDat.radio1 = false;  // this stuff gets reset in 'joystickRadioAck()'
+         // jDat.radio2 = false;
       }
 
-      // If a radio IRQ occurs, then:
+      //  How can we be sure that panedata gets to and from the PC before the
+      //  next set of rdata packets are ready?  And what do we do while we're
+      //  waiting?
+      
+      // When a radio IRQ occurs, and sets 'radioFlag' to 'true':
       // 1) Call the 'joystickRadioAck()' function to:
-      //   a) read a platform data packets (rDat1) and send a
-      //   joystick data packet (jDat) as acknowledgment (ACK);
-      //   b) wait for a second platform data packet (rDat2)
-      //   and acknowledg that;
-      // 2) show the lights;
-      // 3) reset the radio IRQ flag and
-      // 4) return to Main Loop.
+      //  a) read a platform data packet (rDat1) and
+      //  b) return a joystick data packet (jDat) as acknowledgment (ACK).
+      //  c) Set radio1 'True,' wait for a second data packet (rDat2), and
+      //  d) acknowledge that.
+      //  e) Set radio2 'True', compare loTime bytes and
+      //  f) Set sync 'True'.
+      // 2) Show the joystick lights, set radioFlag 'false' and
+      // return to the Main Loop.
       if( radioFlag)
       {
-          // I don't know why I changed from 'radioFlag' to
-          // 'jDat.radioIRQ' so I'm toggling it and counting
-          //  them up to 1000 for the hell of it.
-          jDat.radioIRQ = !jDat.radioIRQ;
-          if( jDat.rIrqCount < 1000) ++jDat.rIrqCount;
-              else jDat.rIrqCount = 0;
-
           bbRadio.joystickRadioAck();  // Run the radio routine.
           bbJoystick.showLights();     // Light LEDS to match rDat flag bits.
-          jDat.radioIRQ = false;
           radioFlag = false;           // Reset the radio IRQ flag.
+          //jDat.radioIRQ = true;
       }
 
-//    printAllData();    // print all data structs in Hex code - 'routines.cpp'
-      ++jDat.joyLoop;      // advance joystick loop counter
+      ++jDat.joyLoop;      // advance joystick loop counter - uint32
       jDat.loopTime = (uint16_t)( millis() - jDat.joyClock);
+
+//    printAllData();    // print all data structs in Hex code - 'routines.cpp'
 //    printTimeData();
 //    bbJoystick.printJoyData();
 //    delay(20);
@@ -129,30 +134,28 @@ void loop()
 //  This is for testing purposes
 void printTimeData()
 {
-      printf( "jLoop %07u", jDat.joyLoop);
+      printf( "Loop %07u", jDat.joyLoop);
       printf( " | ");
-      printf( "jClk %010u", jDat.joyClock);  //   Joystick Clock in milliseconds
+      printf( "Clk %010u", jDat.joyClock);  //   Joystick Clock in milliseconds
       printf( " | ");
-      printf( "jt %03u", jDat.loopTime);  //   Joystick loop time
+      printf( "dT %03u", jDat.loopTime);  //   Joystick loop time
       printf( " | ");
-      printf( "jRad: ");
-      if( jDat.radioIRQ) printf( "True "); else printf( "False");
-      printf( " | ");
-      printf( "jRad1: ");
+      printf( "Radio1 ");
       if( jDat.radio1) printf( "True "); else printf( "False");
       printf( " | ");
-      printf( "jRad2: ");
+      printf( "Radio2 ");
       if( jDat.radio2) printf( "True "); else printf( "False");
       printf( " | ");
-      printf( "jSync: ");
+      printf( "Sync ");
       if( jDat.sync) printf( "True "); else printf( "False");
       printf( " | ");
-      printf( "r1 %03u", rDat1.loTime);   //   Short Platform Clock in milliseconds
+      printf( "loT1 %03u", rDat1.loTime);   //   Short Platform Clock in milliseconds
       printf( " | ");
-      printf( "r2 %03u", rDat2.loTime);     //   Short Platform Clock in milliseconds
+      printf( "loT2 %03u", rDat2.loTime);     //   Short Platform Clock in milliseconds
       printf( " | ");
-      printf( "bRadio %03u", rDat2.radioTime);  //   Platform loop time
+      printf( "botRadT %03u", rDat2.radioTime);  //   Platform loop time
       printf( " | ");
-      printf( "bLoop %04u", rDat2.loopTime);  //   Platform loop time
-      printf( "\r\n"); // carriage return/line feed
+      printf( "botLoopT %04u", rDat2.loopTime);  //   Platform loop time
+      printf( "\r\n");      // carriage return/line feed
+      delay(20);
 }
