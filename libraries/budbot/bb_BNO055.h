@@ -1,5 +1,12 @@
 /** \mainpage
 *
+* File: bb_BNO055.h
+* Modified by:  Bud Ryerson
+* Date: 20210609
+* Description: Fixed typo in line #827
+*   From:  #define OPERATION_MODE_AMG           0X0 7
+*   To:    #define OPERATION_MODE_AMG           0X07
+* 
 ****************************************************************************
 * Copyright (C) 2013 - 2014 Bosch Sensortec GmbH
 *
@@ -334,13 +341,13 @@ bus_read(dev_addr, reg_addr, reg_data, r_len)
 #define BNO055_PAGE_ID_ADDR           0X07
 
 /* PAGE0 REGISTER DEFINITION START*/
-#define BNO055_CHIP_ID_ADDR                 0x00
+#define BNO055_CHIP_ID_ADDR           0x00
 #define BNO055_ACCEL_REV_ID_ADDR      0x01
-#define BNO055_MAG_REV_ID_ADDR              0x02
-#define BNO055_GYRO_REV_ID_ADDR             0x03
+#define BNO055_MAG_REV_ID_ADDR        0x02
+#define BNO055_GYRO_REV_ID_ADDR       0x03
 #define BNO055_SW_REV_ID_LSB_ADDR     0x04
 #define BNO055_SW_REV_ID_MSB_ADDR     0x05
-#define BNO055_BL_REV_ID_ADDR       0X06
+#define BNO055_BL_REV_ID_ADDR         0X06
 
 /* Accel data register*/
 #define BNO055_ACCEL_DATA_X_LSB_ADDR      0X08
@@ -406,12 +413,12 @@ bus_read(dev_addr, reg_addr, reg_data, r_len)
 #define BNO055_TEMP_ADDR          0X34
 
 /* Status registers*/
-#define BNO055_CALIB_STAT_ADDR        0X35
-#define BNO055_SELFTEST_RESULT_ADDR     0X36
-#define BNO055_INTR_STAT_ADDR       0X37
-#define BNO055_SYS_CLK_STAT_ADDR      0X38
-#define BNO055_SYS_STAT_ADDR        0X39
-#define BNO055_SYS_ERR_ADDR         0X3A
+#define BNO055_CALIB_STAT_ADDR         0X35
+#define BNO055_SELFTEST_RESULT_ADDR    0X36
+#define BNO055_INTR_STAT_ADDR          0X37
+#define BNO055_SYS_CLK_STAT_ADDR       0X38
+#define BNO055_SYS_STAT_ADDR           0X39
+#define BNO055_SYS_ERR_ADDR            0X3A
 
 /* Unit selection register*/
 #define BNO055_UNIT_SEL_ADDR         0X3B
@@ -784,7 +791,7 @@ s_16 sic_8;/**< soft iron calibration matrix 8 data */
 #define EULER_UNIT_RAD  0x01
 
 /*Temperature unit*/
-#define TEMP_UNIT_CELSIUS   0x00
+#define TEMP_UNIT_CELSIUS     0x00
 #define TEMP_UNIT_FAHRENHEIT  0x01
 
 /*Accel division factor*/
@@ -824,7 +831,7 @@ s_16 sic_8;/**< soft iron calibration matrix 8 data */
 #define OPERATION_MODE_ACCMAG        0X04
 #define OPERATION_MODE_ACCGYRO       0X05
 #define OPERATION_MODE_MAGGYRO       0X06
-#define OPERATION_MODE_AMG           0X0 7
+#define OPERATION_MODE_AMG           0X07
 #define OPERATION_MODE_IMUPLUS       0X08
 #define OPERATION_MODE_COMPASS       0X09
 #define OPERATION_MODE_M4G           0X0A
@@ -881,15 +888,15 @@ s_16 sic_8;/**< soft iron calibration matrix 8 data */
 /* Mag power mode*/
 #define MAG_POWER_MODE_NORMAL         0X00
 #define MAG_POWER_MODE_SLEEP          0X01
-#define MAG_POWER_MODE_SUSPEND          0X02
-#define MAG_POWER_MODE_FORCE_MODE       0X03
+#define MAG_POWER_MODE_SUSPEND        0X02
+#define MAG_POWER_MODE_FORCE_MODE     0X03
 
 /* Gyro range*/
 #define GYRO_RANGE_2000DPS    0x00
 #define GYRO_RANGE_1000DPS    0x01
-#define GYRO_RANGE_500DPS   0x02
-#define GYRO_RANGE_250DPS   0x03
-#define GYRO_RANGE_125DPS   0x04
+#define GYRO_RANGE_500DPS     0x02
+#define GYRO_RANGE_250DPS     0x03
+#define GYRO_RANGE_125DPS     0x04
 
 /* Gyro Bandwidth*/
 #define GYRO_BW_523HZ   0x00
@@ -902,10 +909,10 @@ s_16 sic_8;/**< soft iron calibration matrix 8 data */
 #define GYRO_BW_32HZ    0x07
 
 /* Gyro power mode*/
-#define GYRO_POWER_MODE_NORMAL        0X00
-#define GYRO_POWER_MODE_FASTPOWERUP     0X01
-#define GYRO_POWER_MODE_DEEPSUSPEND     0X02
-#define GYRO_POWER_MODE_SUSPEND       0X03
+#define GYRO_POWER_MODE_NORMAL            0X00
+#define GYRO_POWER_MODE_FASTPOWERUP       0X01
+#define GYRO_POWER_MODE_DEEPSUSPEND       0X02
+#define GYRO_POWER_MODE_SUSPEND           0X03
 #define GYRO_POWER_MODE_ADVANCE_POWERSAVE 0X04
 
 /* Accel Sleep Duration */
@@ -933,7 +940,7 @@ s_16 sic_8;/**< soft iron calibration matrix 8 data */
 /* sets sleep duration to 1 s */
 
 /* Gyro Auto sleep duration*/
-#define BNO055_GYRO_No_AUTOSLPDUR   0x00
+#define BNO055_GYRO_No_AUTOSLPDUR     0x00
 #define BNO055_GYRO_4MS_AUTOSLPDUR    0x01
 #define BNO055_GYRO_5MS_AUTOSLPDUR    0x02
 #define BNO055_GYRO_8MS_AUTOSLPDUR    0x03
@@ -964,12 +971,12 @@ s_16 sic_8;/**< soft iron calibration matrix 8 data */
 #define BNO055_GYRO_HIGHRATE_Z_AXIS   2
 
 /* Axis remap values*/
-#define REMAP_X_Y     0X21
-#define REMAP_Y_Z     0X18
-#define REMAP_Z_X     0X06
+#define REMAP_X_Y         0X21
+#define REMAP_Y_Z         0X18
+#define REMAP_Z_X         0X06
 #define REMAP_X_Y_Z_TYPE0 0X12
 #define REMAP_X_Y_Z_TYPE1 0X09
-#define DEFAULT_AXIS    0X24
+#define DEFAULT_AXIS      0X24
 
 /* Axis remap sign */
 #define REMAP_AXIS_POSITIVE 0X00
@@ -1510,10 +1517,10 @@ BNO055_GRAVITY_DATA_Z_MSB_ADDR
 #define BNO055_OPERATION_MODE__LEN      4
 #define BNO055_OPERATION_MODE__REG      BNO055_OPR_MODE_ADDR
 /* Power Mode register*/
-#define BNO055_POWER_MODE__POS             0
-#define BNO055_POWER_MODE__MSK             0X03
-#define BNO055_POWER_MODE__LEN             2
-#define BNO055_POWER_MODE__REG             BNO055_PWR_MODE_ADDR
+#define BNO055_POWER_MODE__POS    0
+#define BNO055_POWER_MODE__MSK    0X03
+#define BNO055_POWER_MODE__LEN    2
+#define BNO055_POWER_MODE__REG    BNO055_PWR_MODE_ADDR
 
 /*Self Test register*/
 #define BNO055_SELFTEST__POS      0
@@ -1522,22 +1529,22 @@ BNO055_GRAVITY_DATA_Z_MSB_ADDR
 #define BNO055_SELFTEST__REG      BNO055_SYS_TRIGGER_ADDR
 
 /* RST_SYS register*/
-#define BNO055_SYS_RST__POS             5
-#define BNO055_SYS_RST__MSK             0X20
-#define BNO055_SYS_RST__LEN             1
-#define BNO055_SYS_RST__REG             BNO055_SYS_TRIGGER_ADDR
+#define BNO055_SYS_RST__POS       5
+#define BNO055_SYS_RST__MSK       0X20
+#define BNO055_SYS_RST__LEN       1
+#define BNO055_SYS_RST__REG       BNO055_SYS_TRIGGER_ADDR
 
 /* RST_INT register*/
-#define BNO055_INTR_RST__POS             6
-#define BNO055_INTR_RST__MSK             0X40
-#define BNO055_INTR_RST__LEN             1
-#define BNO055_INTR_RST__REG             BNO055_SYS_TRIGGER_ADDR
+#define BNO055_INTR_RST__POS      6
+#define BNO055_INTR_RST__MSK      0X40
+#define BNO055_INTR_RST__LEN      1
+#define BNO055_INTR_RST__REG      BNO055_SYS_TRIGGER_ADDR
 
 /* CLK_SRC register*/
-#define BNO055_CLK_SRC__POS             7
-#define BNO055_CLK_SRC__MSK             0X80
-#define BNO055_CLK_SRC__LEN             1
-#define BNO055_CLK_SRC__REG             BNO055_SYS_TRIGGER_ADDR
+#define BNO055_CLK_SRC__POS       7
+#define BNO055_CLK_SRC__MSK       0X80
+#define BNO055_CLK_SRC__LEN       1
+#define BNO055_CLK_SRC__REG       BNO055_SYS_TRIGGER_ADDR
 
 /* Temp source register*/
 #define BNO055_TEMP_SOURCE__POS   0
