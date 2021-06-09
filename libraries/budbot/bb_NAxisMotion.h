@@ -3,6 +3,7 @@
 * Derived from NAxisMotion.h rev3.0
 * Date: 7JUL16
 * Usage:  Header file of the C++ Wrapper for the BNO055 Sensor API
+* Last Work: 07JUL16 - declared remapAxisPosition(); function - line #672
 ****************************************************************************
 *
 * Added Arduino M0/M0 Pro support

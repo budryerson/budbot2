@@ -2,7 +2,7 @@
 * File Name: bb_NAxisMotion.cpp
 * Modified by: Bud Ryerson
 * Usage: Source file of the C++ Wrapper for the BNO055 Sensor API
-* Last Work: 07JUL16 - added axis remap routine
+* Last Work: 07JUL16 - added axis remap function - line #942
 ****************************************************************************
 * Original: NAxisMotion.cpp rev3.0
 * Date: 2015/02/10
